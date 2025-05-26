@@ -21,6 +21,7 @@ Um sistema inteligente de agendamento de tarefas para sprints que considera múl
 - [Regras de Negócio](#-regras-de-negócio)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
 - [Contribuição](#-contribuição)
+- [📊 Diagrama de Sequência](#-diagrama-de-sequência)
 
 ## 🎯 Visão Geral
 
@@ -334,3 +335,46 @@ sprint-task-scheduler/
 - Documente funções e classes usando docstrings
 - Mantenha cobertura de testes acima de 80%
 - Use type hints para melhor legibilidade
+
+## 📊 Diagrama de Sequência
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário
+    participant S as Sistema
+    participant C as Config Manager
+    participant A as Azure DevOps
+    participant P as Planejador
+    participant R as Relatório
+
+    U->>S: Inicia o sistema
+    S->>C: Carrega configurações
+    C-->>S: Configurações carregadas
+    
+    S->>C: Carrega executores
+    C-->>S: Lista de executores
+    
+    S->>C: Carrega ausências
+    C-->>S: Lista de ausências
+    
+    S->>C: Carrega dependências
+    C-->>S: Lista de dependências
+    
+    S->>A: Busca tasks da sprint
+    A-->>S: Tasks da sprint
+    
+    S->>P: Processa agendamento
+    
+    P->>P: Valida dependências
+    P->>P: Calcula disponibilidade
+    P->>P: Distribui tasks
+    
+    P-->>S: Agendamento concluído
+    
+    S->>R: Gera relatório
+    R-->>S: Relatório gerado
+    
+    S-->>U: Exibe resultado
+```
+
+Este diagrama representa o fluxo principal do sistema, demonstrando a interação entre os diferentes componentes e a sequência de operações realizadas durante o processo de agendamento de tasks.
