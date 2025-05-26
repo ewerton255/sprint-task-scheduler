@@ -744,73 +744,91 @@ class SprintScheduler:
         real_end_date = None
 
         while remaining_hours > 0:
-            # Verifica se é dia útil e não tem ausência
-            if self._is_working_day(current_date, task.assignee):
-                current_time = current_date.time()
-                
-                # Determina em qual período estamos e quantas horas disponíveis
-                if self.morning_start <= current_time < self.morning_end:
-                    # Período da manhã
-                    period_end = self.morning_end
-                elif self.afternoon_start <= current_time < self.afternoon_end:
-                    # Período da tarde
-                    period_end = self.afternoon_end
-                elif current_time < self.morning_start:
-                    # Antes do início da manhã
-                    current_date = self._create_datetime(current_date, 9)
-                    period_end = self.morning_end
-                elif self.morning_end <= current_time < self.afternoon_start:
-                    # Entre períodos, pula para o início da tarde
+            current_time = current_date.time()
+            
+            # Determina em qual período estamos e quantas horas disponíveis
+            if current_time < self.morning_start:
+                # Antes do início da manhã
+                current_date = self._create_datetime(current_date, 9)
+                if not self._is_working_day(current_date, task.assignee):
+                    # Se não pode trabalhar de manhã, tenta a tarde
                     current_date = self._create_datetime(current_date, 14)
-                    period_end = self.afternoon_end
-                else:
-                    # Passou do horário da tarde, vai para o próximo dia de manhã
+                    if not self._is_working_day(current_date, task.assignee):
+                        # Se não pode trabalhar em nenhum período, vai para o próximo dia
+                        current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                        continue
+                period_end = self.afternoon_end if current_date.time() >= self.afternoon_start else self.morning_end
+                
+            elif self.morning_start <= current_time < self.morning_end:
+                # Período da manhã
+                if not self._is_working_day(current_date, task.assignee):
+                    # Se não pode trabalhar de manhã, tenta a tarde
+                    current_date = self._create_datetime(current_date, 14)
+                    if not self._is_working_day(current_date, task.assignee):
+                        # Se não pode trabalhar em nenhum período, vai para o próximo dia
+                        current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                        continue
+                period_end = self.afternoon_end if current_date.time() >= self.afternoon_start else self.morning_end
+                
+            elif self.morning_end <= current_time < self.afternoon_start:
+                # Entre períodos, pula para o início da tarde
+                current_date = self._create_datetime(current_date, 14)
+                if not self._is_working_day(current_date, task.assignee):
+                    # Se não pode trabalhar à tarde, vai para o próximo dia
                     current_date = self._create_datetime(current_date + timedelta(days=1), 9)
                     continue
-
-                # Corrigido: cria period_end_dt com timezone
-                period_end_dt = datetime.combine(current_date.date(), period_end, tzinfo=self.timezone)
-                delta = (period_end_dt - current_date).total_seconds() / 3600
-                hours_left_in_period = max(0, delta)
-
-                if remaining_hours <= hours_left_in_period:
-                    # Termina dentro deste período
-                    real_end_date = current_date + timedelta(hours=remaining_hours)
-                    # Ajusta para o fim do período se necessário
-                    if real_end_date.time() > period_end:
-                        real_end_date = self._create_datetime(real_end_date, period_end.hour)
-                    return real_end_date
-                else:
-                    # Consome todo o período e avança
-                    remaining_hours -= hours_left_in_period
-                    
-                    # Avança para o próximo período útil
-                    if period_end == self.morning_end:
-                        # Vai para o início da tarde do mesmo dia
-                        current_date = self._create_datetime(current_date, 14)
-                    else:
-                        # Vai para o início da manhã do próximo dia
-                        current_date = self._create_datetime(current_date + timedelta(days=1), 9)
-                        
-                    # Se ainda há horas restantes, continua no loop
-                    continue
-            else:
-                # Se não é dia útil ou tem ausência, passa para o próximo dia útil de manhã
-                current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                period_end = self.afternoon_end
                 
+            elif self.afternoon_start <= current_time < self.afternoon_end:
+                # Período da tarde
+                if not self._is_working_day(current_date, task.assignee):
+                    # Se não pode trabalhar à tarde, vai para o próximo dia
+                    current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                    continue
+                period_end = self.afternoon_end
+                
+            else:
+                # Passou do horário da tarde, vai para o próximo dia de manhã
+                current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                continue
+
+            # Corrigido: cria period_end_dt com timezone
+            period_end_dt = datetime.combine(current_date.date(), period_end, tzinfo=self.timezone)
+            delta = (period_end_dt - current_date).total_seconds() / 3600
+            hours_left_in_period = max(0, delta)
+
+            if remaining_hours <= hours_left_in_period:
+                # Termina dentro deste período
+                real_end_date = current_date + timedelta(hours=remaining_hours)
+                # Ajusta para o fim do período se necessário
+                if real_end_date.time() > period_end:
+                    real_end_date = self._create_datetime(real_end_date, period_end.hour)
+                return real_end_date
+            else:
+                # Consome todo o período e avança
+                remaining_hours -= hours_left_in_period
+                
+                # Avança para o próximo período útil
+                if period_end == self.morning_end:
+                    # Vai para o início da tarde do mesmo dia
+                    current_date = self._create_datetime(current_date, 14)
+                else:
+                    # Vai para o início da manhã do próximo dia
+                    current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+
         # Se chegou aqui, retorna o horário atual
         return current_date
 
     def _is_working_day(self, date: datetime, executor: str) -> bool:
         """
-        Verifica se é um dia útil para o executor
+        Verifica se é um dia útil para o executor em um determinado horário
         
         Args:
-            date: Data a ser verificada
+            date: Data e hora a ser verificada
             executor: Email do executor
             
         Returns:
-            bool: True se é dia útil e não tem ausência
+            bool: True se é dia útil e não tem ausência no horário especificado
         """
         # Verifica se é fim de semana
         if date.weekday() >= 5:
@@ -818,6 +836,7 @@ class SprintScheduler:
             
         # Normaliza a data para YYYY-MM-DD
         normalized_date = date.strftime('%Y-%m-%d')
+        current_time = date.time()
             
         # Verifica se tem ausência
         executor_dayoffs = self.dayoffs.get(executor, [])
@@ -825,15 +844,24 @@ class SprintScheduler:
             # Normaliza a data do dayoff para YYYY-MM-DD
             normalized_dayoff_date = dayoff.date.strftime('%Y-%m-%d')
                 
-            # Compara as datas normalizadas
-            if normalized_dayoff_date == normalized_date:
-                if dayoff.period == "full":
-                    return False
-                elif dayoff.period == "morning" and date.time() <= self.morning_end:
-                    return False
-                elif dayoff.period == "afternoon" and date.time() >= self.afternoon_start:
-                    return False
-                    
+            # Se não é o mesmo dia, continua verificando
+            if normalized_dayoff_date != normalized_date:
+                continue
+                
+            # Se é ausência dia inteiro, retorna False
+            if dayoff.period == "full":
+                return False
+                
+            # Se é ausência de manhã e estamos no período da manhã
+            if (dayoff.period == "morning" and 
+                self.morning_start <= current_time <= self.morning_end):
+                return False
+                
+            # Se é ausência de tarde e estamos no período da tarde
+            if (dayoff.period == "afternoon" and 
+                self.afternoon_start <= current_time <= self.afternoon_end):
+                return False
+                
         return True
 
     def _schedule_qa_task(self, task: Task, us: UserStory) -> bool:
