@@ -1,124 +1,74 @@
-# Agendador de Sprint
+# Sprint Task Scheduler
 
-Sistema automatizado para agendamento de tasks em sprints com integração ao Azure DevOps.
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Azure DevOps](https://img.shields.io/badge/Azure%20DevOps-REST%20API-0078D7)](https://learn.microsoft.com/en-us/rest/api/azure/devops)
+[![Pydantic](https://img.shields.io/badge/pydantic-2.6.1-E92063)](https://docs.pydantic.dev/)
+[![Loguru](https://img.shields.io/badge/loguru-0.7.2-499848)](https://github.com/Delgan/loguru)
+[![Python Dateutil](https://img.shields.io/badge/dateutil-2.8.2-yellow)](https://github.com/dateutil/dateutil)
+[![Typer](https://img.shields.io/badge/typer-0.9.0-green)](https://typer.tiangolo.com/)
 
-## Índice
+Um sistema inteligente de agendamento de tarefas para sprints que considera múltiplas frentes de trabalho, ausências e dependências entre tarefas.
+
+## 📋 Índice
+
 - [Visão Geral](#visão-geral)
 - [Funcionalidades](#funcionalidades)
 - [Requisitos](#requisitos)
 - [Instalação](#instalação)
-- [Estrutura do Projeto](#estrutura-do-projeto)
 - [Configuração](#configuração)
-- [Como Executar](#como-executar)
+- [Uso](#uso)
 - [Regras de Negócio](#regras-de-negócio)
+- [Estrutura do Projeto](#estrutura-do-projeto)
+- [Contribuição](#contribuição)
+- [Licença](#licença)
 
-## Visão Geral
+## 🎯 Visão Geral
 
-O Agendador de Sprint é um sistema que automatiza o agendamento de tasks dentro de sprints, integrando-se com o Azure DevOps. O sistema gerencia dependências entre tasks, múltiplas frentes de trabalho (Backend, Frontend, QA, DevOps) e garante a alocação otimizada de recursos respeitando horários de trabalho e restrições de tempo.
+O Sprint Task Scheduler é uma ferramenta desenvolvida para otimizar o agendamento de tarefas em sprints de desenvolvimento de software. Ele considera múltiplas frentes de trabalho (Backend, Frontend, QA, DevOps), ausências de colaboradores, dependências entre tarefas e períodos de trabalho específicos para criar um cronograma eficiente e realista.
 
-## Funcionalidades
+## ✨ Funcionalidades
 
-- ✨ Agendamento automático de tasks com gerenciamento de dependências
-- 👥 Suporte a múltiplas frentes de trabalho (Backend, Frontend, QA, DevOps)
-- 🔄 Tratamento especializado para tasks de QA e DevOps
-- 🌎 Agendamento no fuso horário UTC-3 (Brasília)
-- ⏰ Períodos de trabalho fixos (9:00-12:00 e 14:00-17:00)
-- 📊 Cálculo automático de story points
-- 📅 Gerenciamento de folgas dos membros da equipe
-- 📋 Geração de relatórios de agendamento
+- **Agendamento Inteligente**: Distribui tarefas considerando a disponibilidade dos executores
+- **Múltiplas Frentes**: Suporte para Backend, Frontend, QA e DevOps
+- **Gestão de Ausências**: Considera ausências parciais (manhã/tarde) e totais
+- **Dependências**: Respeita dependências entre tarefas
+- **Períodos de Trabalho**: Considera horários específicos (9h-12h e 14h-17h)
+- **Integração Azure DevOps**: Compatível com datas do Azure DevOps
+- **Story Points**: Cálculo automático baseado em horas estimadas
 
-## Requisitos
+## 📋 Requisitos
 
-### Requisitos de Sistema
 - Python 3.8 ou superior
 - pip (gerenciador de pacotes Python)
-- Git
-- Acesso à internet (para Azure DevOps)
-- Token de acesso pessoal do Azure DevOps com permissões:
-  - Work Items (read, write)
-  - Sprint (read)
+- Acesso ao Azure DevOps (opcional, para integração)
 
-### Requisitos de Hardware
-- Mínimo de 2GB de RAM
-- 100MB de espaço em disco
+## 🚀 Instalação
 
-### Dependências Python
-- python-dateutil>=2.8.2
-- pytz>=2024.1
-- azure-devops>=7.1.0b3
-- pydantic>=2.6.1
-- loguru>=0.7.2
-- python-dotenv>=1.0.0
-- rich>=13.7.0
-- typer>=0.9.0
-
-## Instalação
-
-1. **Instale o Python**
-   - Windows: Baixe e instale do [python.org](https://www.python.org/downloads/)
-   - Linux (Ubuntu/Debian):
-     ```bash
-     sudo apt update
-     sudo apt install python3 python3-pip
-     ```
-   - macOS:
-     ```bash
-     brew install python
-     ```
-
-2. **Clone o repositório**
-   ```bash
-   git clone <repository-url>
-   cd agendador-sprint
-   ```
-
-3. **Crie e ative um ambiente virtual**
-   
-   Windows:
-   ```bash
-   python -m venv venv
-   .\venv\Scripts\activate
-   ```
-   
-   Linux/macOS:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-4. **Instale as dependências**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. **Verifique a instalação**
-   ```bash
-   python -m src.main --help
-   ```
-   Deve exibir a ajuda do comando com as opções disponíveis.
-
-## Estrutura do Projeto
-
-```
-agendador-sprint/
-├── src/
-│   ├── main.py           # Ponto de entrada da aplicação
-│   ├── models/           # Modelos de dados
-│   ├── services/         # Serviços de agendamento
-│   ├── azure/           # Integração com Azure DevOps
-│   └── utils/           # Utilitários
-├── config/              # Arquivos de configuração
-│   ├── setup.json       # Configuração principal
-│   ├── executors.json   # Configuração de executores
-│   ├── dayoffs.json     # Configuração de folgas
-│   └── dependencies.json # Configuração de dependências
-├── logs/               # Logs da aplicação
-└── output/            # Relatórios gerados
+1. Clone o repositório:
+```bash
+git clone https://github.com/seu-usuario/sprint-task-scheduler.git
+cd sprint-task-scheduler
 ```
 
-## Configuração
+2. Crie um ambiente virtual (recomendado):
+```bash
+# Windows
+python -m venv venv
+.\venv\Scripts\activate
 
-### 1. Configuração Principal (config/setup.json)
+# Linux/macOS
+python3 -m venv venv
+source venv/bin/activate
+```
+
+3. Instale as dependências:
+```bash
+pip install -r requirements.txt
+```
+
+## ⚙️ Configuração
+
+1. Configure o arquivo principal (`config/setup.json`):
 ```json
 {
     "azure_devops": {
@@ -127,11 +77,11 @@ agendador-sprint/
         "token": "seu-token"
     },
     "sprint": {
-        "name": "2025_S13_Jun18-Jul01",
-        "year": "2025",
-        "quarter": "Q2",
-        "start_date": "2025-06-18",
-        "end_date": "2025-07-01"
+        "name": "2024_S13_Mar18-Mar29",
+        "year": "2024",
+        "quarter": "Q1",
+        "start_date": "2024-03-18",
+        "end_date": "2024-03-29"
     },
     "team": "Caminho/Da/Sua/Equipe",
     "executors_file": "config/executors.json",
@@ -142,7 +92,7 @@ agendador-sprint/
 }
 ```
 
-### 2. Configuração de Executores (config/executors.json)
+2. Configure os executores (`config/executors.json`):
 ```json
 {
     "backend": [
@@ -150,10 +100,12 @@ agendador-sprint/
         "backend.dev2@empresa.com"
     ],
     "frontend": [
-        "frontend.dev1@empresa.com"
+        "frontend.dev1@empresa.com",
+        "frontend.dev2@empresa.com"
     ],
     "qa": [
-        "qa.analista1@empresa.com"
+        "qa.analista1@empresa.com",
+        "qa.analista2@empresa.com"
     ],
     "devops": [
         "devops.eng1@empresa.com"
@@ -161,111 +113,182 @@ agendador-sprint/
 }
 ```
 
-### 3. Configuração de Folgas (config/dayoffs.json)
+3. Configure as ausências (`config/dayoffs.json`):
 ```json
 {
     "backend.dev1@empresa.com": [
         {
-            "date": "2025-06-20",
+            "date": "2024-03-20",
             "period": "full"
+        },
+        {
+            "date": "2024-03-21",
+            "period": "morning"
+        }
+    ],
+    "frontend.dev1@empresa.com": [
+        {
+            "date": "2024-03-22",
+            "period": "afternoon"
         }
     ]
 }
 ```
 
-Períodos válidos:
-- `"full"`: Dia inteiro
-- `"morning"`: 9:00-12:00
-- `"afternoon"`: 14:00-17:00
-
-### 4. Configuração de Dependências (config/dependencies.json)
+4. Configure as dependências (`config/dependencies.json`):
 ```json
 {
-    "TASK-457": ["TASK-456"]
+    "TASK-457": ["TASK-456"],
+    "TASK-458": ["TASK-457"],
+    "TASK-460": ["TASK-459"]
 }
 ```
 
-## Como Executar
+Notas sobre configuração:
+- **Períodos de Ausência**: 
+  - `"full"`: Dia inteiro
+  - `"morning"`: 9:00-12:00
+  - `"afternoon"`: 14:00-17:00
+- **Dependências**: 
+  - Lista simples de IDs de tasks dependentes
+  - Cada task pode depender de uma ou mais tasks
+  - Sistema verifica automaticamente se as dependências existem
+  - Sistema previne dependências circulares
 
-1. Instale as dependências:
+## 🎮 Uso
+
+1. Certifique-se que todos os arquivos de configuração estão presentes em `config/`:
+   - `setup.json`
+   - `executors.json`
+   - `dayoffs.json`
+   - `dependencies.json`
+
+2. Execute o agendador:
 ```bash
-pip install -r requirements.txt
+python src/main.py
 ```
 
-2. Configure os arquivos na pasta `config/` conforme exemplos acima
+3. O sistema irá:
+   - Carregar todas as configurações
+   - Conectar ao Azure DevOps (se configurado)
+   - Obter os itens da sprint
+   - Realizar o agendamento considerando:
+     - Dependências entre tasks
+     - Ausências dos executores
+     - Períodos de trabalho
+     - Regras de negócio específicas
+   - Gerar os seguintes arquivos:
+     - `output/sprint_report.md`: Relatório detalhado do agendamento
+     - `logs/scheduler.log`: Log detalhado da execução
 
-3. Execute o agendador:
-```bash
-python -m src.main executar --config-dir config
+4. O relatório gerado (`output/sprint_report.md`) contém:
+   - Resumo geral da sprint
+   - Lista de User Stories com:
+     - ID e título
+     - Responsável
+     - Data de finalização
+     - Story Points
+   - Lista de ausências por executor
+   - Dependências entre tasks
+   - Tasks que não puderam ser agendadas
+
+5. Monitore o progresso:
+   - Consulte o relatório em `output/sprint_report.md`
+
+## 📜 Regras de Negócio
+
+### Períodos de Trabalho
+- **Manhã**: 9:00 às 12:00
+- **Tarde**: 14:00 às 17:00
+- Fins de semana são desconsiderados automaticamente
+
+### Ausências
+- **Dia Inteiro**: Executor indisponível o dia todo
+- **Manhã**: Indisponível das 9:00 às 12:00
+- **Tarde**: Indisponível das 14:00 às 17:00
+
+### Story Points
+Conversão automática de horas estimadas para story points:
+- ≤ 1 hora: 0.5 SP
+- ≤ 2 horas: 1 SP
+- ≤ 3 horas: 2 SP
+- ≤ 5 horas: 3 SP
+- ≤ 9 horas: 5 SP
+- ≤ 14 horas: 8 SP
+- ≤ 23 horas: 13 SP
+- ≤ 37 horas: 21 SP
+- ≤ 60 horas: 34 SP
+- \> 60 horas: 55 SP
+
+### Priorização de Tasks
+1. Tasks regulares (não-QA, não-DevOps)
+2. Tasks de QA (exceto plano de testes)
+3. Tasks de DevOps
+4. Tasks de QA Plano de Testes
+
+### Atribuição de Executores
+- Mantém mesmo executor por frente na User Story
+- Balanceia carga de trabalho entre executores
+- Considera disponibilidade e ausências
+
+### Dependências
+- Tasks dependentes só são agendadas após conclusão das dependências
+- Dependências circulares são identificadas e reportadas
+
+## 📁 Estrutura do Projeto
+
+```
+sprint-task-scheduler/
+├── config/                 # Arquivos de configuração
+│   ├── setup.json         # Configuração principal do sistema
+│   ├── executors.json     # Configuração de executores por frente
+│   ├── dayoffs.json       # Registro de ausências dos executores
+│   └── dependencies.json  # Dependências entre tasks
+├── src/                   # Código fonte
+│   ├── models/           # Modelos de dados
+│   │   ├── entities.py   # Entidades do sistema (Sprint, US, Task)
+│   │   └── config.py     # Modelos de configuração
+│   ├── services/         # Serviços de negócio
+│   │   ├── scheduler.py  # Lógica de agendamento
+│   │   └── report.py     # Geração de relatórios
+│   ├── azure/            # Integração com Azure DevOps
+│   │   └── client.py     # Cliente Azure DevOps
+│   └── main.py           # Ponto de entrada
+├── output/               # Resultados do agendamento
+│   └── sprint_report.md  # Relatório gerado
+├── logs/                 # Logs do sistema
+│   └── scheduler.log     # Log detalhado de execução
+├── requirements.txt      # Dependências Python
+└── README.md            # Documentação
 ```
 
-O sistema irá:
-1. Carregar as configurações
-2. Conectar ao Azure DevOps
-3. Obter os itens da sprint
-4. Realizar o agendamento
-5. Atualizar os itens no Azure DevOps
-6. Gerar relatório na pasta `output/`
-7. Gerar logs na pasta `logs/`
+### Descrição dos Componentes
 
-## Regras de Negócio
+#### Arquivos de Configuração
+- `setup.json`: Configurações gerais do sistema (Azure DevOps, sprint, time)
+- `executors.json`: Mapeamento de executores por frente de trabalho
+- `dayoffs.json`: Registro de ausências dos executores
+- `dependencies.json`: Dependências entre tasks
 
-### Horários e Períodos
+#### Código Fonte
+- `models/`: Definições de dados e configurações
+- `services/`: Lógica de negócio principal
+- `azure/`: Integração com Azure DevOps
 
-- Sistema opera em UTC-3 (Brasília)
-- Períodos de trabalho:
-  - Manhã: 9:00-12:00 (3 horas)
-  - Tarde: 14:00-17:00 (3 horas)
-- Tasks devem terminar às 12:00 ou 17:00
-- Sistema reutiliza tempo restante dentro dos períodos
+#### Saída e Logs
+- `output/`: Relatórios gerados
+- `logs/`: Registros de execução
 
-### Tipos de Tasks e Ordem de Agendamento
+## 🤝 Contribuição
 
-1. **Tasks Regulares**
-   - Tasks de desenvolvimento padrão (Backend/Frontend)
-   - Agendadas primeiro, respeitando dependências
+1. Faça um Fork do projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
 
-2. **Tasks de QA**
-   - Identificadas por "backend" ou "frontend" no título
-   - Tasks QA Backend iniciam após última task backend
-   - Tasks QA Frontend iniciam após última task frontend
-   - Agendadas após tasks regulares
-
-3. **Tasks DevOps**
-   - Iniciam após última task backend da US
-   - Se não houver backend, usa última task frontend
-   - Agendadas após tasks de QA
-
-4. **Tasks QA Plano de Testes**
-   - Agendadas por último
-   - Não requerem data de término
-   - Requerem executor atribuído
-
-### Atribuição de User Stories
-
-User Stories são atualizadas apenas quando:
-- Todas as tasks estão agendadas (status = SCHEDULED)
-- Todas as tasks têm executor atribuído
-- Todas as tasks têm datas definidas (exceto planos de teste)
-
-O responsável é definido por:
-1. Desenvolvedor com mais tasks na US
-2. Em caso de empate:
-   - Prioridade para desenvolvedores Backend
-   - Depois desenvolvedores Frontend
-   - Por fim, primeiro desenvolvedor do empate
-
-### Cálculo de Story Points
-
-| Horas    | Story Points |
-|----------|--------------|
-| ≤ 1      | 0.5         |
-| ≤ 2      | 1           |
-| ≤ 3      | 2           |
-| ≤ 5      | 3           |
-| ≤ 9      | 5           |
-| ≤ 14     | 8           |
-| ≤ 23     | 13          |
-| ≤ 37     | 21          |
-| ≤ 60     | 34          |
-| > 60     | 55          |
+### Padrões de Código
+- Siga PEP 8 para estilo de código Python
+- Documente funções e classes usando docstrings
+- Mantenha cobertura de testes acima de 80%
+- Use type hints para melhor legibilidade
