@@ -16,9 +16,11 @@ Um sistema inteligente de agendamento de tarefas para sprints que considera múl
 - [Requisitos](#-requisitos)
 - [Instalação](#-instalação)
 - [Configuração](#️-configuração)
+- [Configuração do Board](#-configuração-do-board)
 - [Uso](#-uso)
 - [Regras de Negócio](#-regras-de-negócio)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
+- [Contribuição](#-contribuição)
 
 ## 🎯 Visão Geral
 
@@ -43,26 +45,26 @@ O Sprint Task Scheduler é uma ferramenta desenvolvida para otimizar o agendamen
 ## 🚀 Instalação
 
 1. Clone o repositório:
-```bash
+     ```bash
 git clone https://github.com/seu-usuario/sprint-task-scheduler.git
 cd sprint-task-scheduler
 ```
 
 2. Crie um ambiente virtual (recomendado):
-```bash
+   ```bash
 # Windows
-python -m venv venv
-.\venv\Scripts\activate
-
+   python -m venv venv
+   .\venv\Scripts\activate
+   
 # Linux/macOS
-python3 -m venv venv
-source venv/bin/activate
-```
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
 
 3. Instale as dependências:
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ## ⚙️ Configuração
 
@@ -152,6 +154,48 @@ Notas sobre configuração:
   - Cada task pode depender de uma ou mais tasks
   - Sistema verifica automaticamente se as dependências existem
   - Sistema previne dependências circulares
+
+## 📌 Configuração do Board
+
+O Board do Azure DevOps precisa seguir algumas convenções específicas para que o agendador funcione corretamente:
+
+### Requisitos das Tasks
+
+1. **Estimativas**
+   - Campo `Original Estimate` deve estar preenchido em todas as tasks não concluídas
+   - Valor deve ser em horas (será convertido automaticamente para Story Points)
+   - Tasks de Plano de Teste não precisam de estimativa
+
+2. **Palavras-chave no Título**
+   - Tasks de Backend: Devem conter `[BE]` no título
+   - Tasks de Frontend: Devem conter `[FE]` no título
+   - Tasks de QA: Devem conter `[QA]` no título
+   - Tasks de DevOps: Devem conter `DevOps` no título
+   - Planos de Teste: Devem conter `Plano de Testes` no título
+
+3. **Estados das Tasks**
+   - Tasks concluídas devem estar no estado `Closed`
+   - Tasks para planejamento podem estar em `New` ou `Active`
+
+### Estrutura das User Stories
+
+1. **Hierarquia**
+   - Tasks devem estar vinculadas às suas User Stories como itens filhos
+   - User Stories devem estar no mesmo sprint das suas tasks
+
+2. **Campos Obrigatórios**
+   - User Stories devem ter o campo `Area Path` definido
+   - O `Area Path` é usado para identificar a equipe responsável
+
+### Exemplos de Títulos Válidos
+
+```
+- [BE] Implementar endpoint de autenticação
+- [FE] Criar componente de formulário
+- [QA] Validar integração com API de pagamentos
+- [QA] Elaboração de Plano de Testes
+- DevOps - Criar Env Flux
+```
 
 ## 🎮 Uso
 
