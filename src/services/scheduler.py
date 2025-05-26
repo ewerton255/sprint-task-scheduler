@@ -61,9 +61,43 @@ class SprintScheduler:
         """Agenda todas as tasks da sprint"""
         logger.info(f"Iniciando agendamento da sprint {self.sprint.name}")
         
-        # Agenda tasks por User Story
+        # Primeiro agenda todas as User Stories
         for us in self.sprint.user_stories:
             self._schedule_user_story(us)
+            
+        # Coleta todas as tasks bloqueadas da sprint
+        blocked_tasks = []
+        blocked_qa_plan_tasks = []
+        for us in self.sprint.user_stories:
+            for task in us.tasks:
+                if task.status == TaskStatus.BLOCKED:
+                    blocked_tasks.append(task)
+                elif task.is_qa_test_plan and task.status != TaskStatus.SCHEDULED:
+                    blocked_qa_plan_tasks.append(task)
+        
+        # Tenta agendar as tasks bloqueadas após todas as User Stories
+        if blocked_tasks:
+            logger.info(f"Tentando agendar {len(blocked_tasks)} tasks bloqueadas após todas as User Stories")
+            for task in blocked_tasks:
+                if self._schedule_task(task):
+                    logger.info(f"Task {task.id} desbloqueada após agendamento de todas as User Stories")
+                    # Tenta atualizar a User Story após desbloquear a task
+                    us = next(us for us in self.sprint.user_stories if us.id == task.parent_user_story_id)
+                    self._try_update_user_story(us)
+                else:
+                    logger.warning(f"Task {task.id} permanece bloqueada após tentativa de agendamento")
+        
+        # Tenta agendar as tasks de plano de testes após desbloqueio de outras tasks
+        if blocked_qa_plan_tasks:
+            logger.info(f"Tentando agendar {len(blocked_qa_plan_tasks)} tasks de plano de testes após desbloqueio de outras tasks")
+            for task in blocked_qa_plan_tasks:
+                us = next(us for us in self.sprint.user_stories if us.id == task.parent_user_story_id)
+                self._schedule_qa_plan_task(task, us)
+                if task.status == TaskStatus.SCHEDULED:
+                    logger.info(f"Task de plano de testes {task.id} agendada após desbloqueio de outras tasks")
+                    self._try_update_user_story(us)
+                else:
+                    logger.warning(f"Task de plano de testes {task.id} permanece bloqueada")
             
         logger.info("Agendamento da sprint concluído")
 
@@ -81,18 +115,50 @@ class SprintScheduler:
         
         # Primeiro agenda tasks regulares (não-QA e não-DevOps)
         regular_tasks = [t for t in us.tasks if not (t.is_qa_test_plan or t.is_devops_task)]
-        for task in regular_tasks:
-            if not self._schedule_task(task):
-                blocked_tasks.append(task)
-            else:
-                # Tenta agendar tasks bloqueadas após cada agendamento bem sucedido
-                still_blocked = []
-                for blocked_task in blocked_tasks:
-                    if self._schedule_task(blocked_task):
-                        logger.info(f"Task {blocked_task.id} desbloqueada após agendamento da task {task.id}")
+        
+        # Ordena as tasks por número de dependências (menos dependências primeiro)
+        regular_tasks.sort(key=lambda t: len(t.dependencies) if t.dependencies else 0)
+        
+        # Agenda tasks em loop até que todas estejam agendadas ou não haja mais progresso
+        while regular_tasks:
+            progress = False
+            still_to_schedule = []
+            
+            for task in regular_tasks:
+                if not self._schedule_task(task):
+                    # Se a task não pode ser agendada, verifica se é por dependência
+                    if task.dependencies:
+                        blocked_tasks.append(task)
                     else:
-                        still_blocked.append(blocked_task)
-                blocked_tasks = still_blocked
+                        still_to_schedule.append(task)
+                else:
+                    progress = True
+                    # Tenta agendar tasks bloqueadas após cada agendamento bem sucedido
+                    still_blocked = []
+                    for blocked_task in blocked_tasks:
+                        if self._schedule_task(blocked_task):
+                            logger.info(f"Task {blocked_task.id} desbloqueada após agendamento da task {task.id}")
+                            progress = True
+                        else:
+                            still_blocked.append(blocked_task)
+                    blocked_tasks = still_blocked
+            
+            # Se não houve progresso e ainda há tasks para agendar, para o loop
+            if not progress and regular_tasks:
+                break
+                
+            regular_tasks = still_to_schedule
+            
+        # Tenta agendar tasks bloqueadas uma última vez após todas as tasks regulares
+        if blocked_tasks:
+            logger.info(f"Tentando agendar {len(blocked_tasks)} tasks bloqueadas após agendamento de todas as tasks regulares")
+            still_blocked = []
+            for blocked_task in blocked_tasks:
+                if self._schedule_task(blocked_task):
+                    logger.info(f"Task {blocked_task.id} desbloqueada após agendamento de todas as tasks regulares")
+                else:
+                    still_blocked.append(blocked_task)
+            blocked_tasks = still_blocked
             
         # Depois agenda tasks de QA (exceto plano de testes)
         qa_tasks = [t for t in us.tasks 
@@ -722,10 +788,17 @@ class SprintScheduler:
         if date.weekday() >= 5:
             return False
             
+        # Normaliza a data para YYYY-MM-DD
+        normalized_date = date.strftime('%Y-%m-%d')
+            
         # Verifica se tem ausência
         executor_dayoffs = self.dayoffs.get(executor, [])
         for dayoff in executor_dayoffs:
-            if dayoff.date.date() == date.date():
+            # Normaliza a data do dayoff para YYYY-MM-DD
+            normalized_dayoff_date = dayoff.date.strftime('%Y-%m-%d')
+                
+            # Compara as datas normalizadas
+            if normalized_dayoff_date == normalized_date:
                 if dayoff.period == "full":
                     return False
                 elif dayoff.period == "morning" and date.time() <= self.morning_end:
