@@ -29,6 +29,7 @@ class Task(BaseModel):
     dependencies: List[str] = Field(default_factory=list)
     start_date: Optional[datetime]
     end_date: Optional[datetime]
+    azure_end_date: Optional[datetime]
     status: TaskStatus = TaskStatus.PENDING
     parent_user_story_id: str
 

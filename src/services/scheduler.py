@@ -246,7 +246,7 @@ class SprintScheduler:
         
         # Calcula datas considerando todas as tasks agendadas
         start_dates = [t.start_date for t in active_tasks]
-        end_dates = [t.end_date for t in active_tasks]
+        end_dates = [t.azure_end_date for t in active_tasks]
         
         if start_dates and end_dates:
             us.start_date = min(start_dates)
@@ -280,6 +280,34 @@ class SprintScheduler:
         logger.info(f"User Story {us.id} atualizada após todas as tasks agendadas: "
                     f"responsável={us.assignee}, início={us.start_date}, fim={us.end_date}, "
                     f"SP={us.story_points}, horas_totais={total_estimated_hours}")
+
+    def _adjust_time_to_period_end(self, date: datetime) -> datetime:
+        """
+        Ajusta o horário para o fim do período mais próximo
+        
+        Args:
+            date: Data com horário a ser ajustado
+            
+        Returns:
+            datetime: Data com horário ajustado para o fim do período
+        """
+        time = date.time()
+        
+        # Se está no período da manhã (9:00-12:00)
+        if self.morning_start <= time <= self.morning_end:
+            return self._create_datetime(date, 12)
+        # Se está no período da tarde (14:00-17:00)
+        elif self.afternoon_start <= time <= self.afternoon_end:
+            return self._create_datetime(date, 17)
+        # Se está entre os períodos, ajusta para o próximo período
+        elif time < self.morning_start:
+            return self._create_datetime(date, 12)
+        elif time < self.afternoon_start:
+            return self._create_datetime(date, 17)
+        else:
+            # Se passou do fim do dia, vai para o próximo dia
+            next_date = date + timedelta(days=1)
+            return self._create_datetime(next_date, 12)
 
     def _schedule_task(self, task: Task) -> bool:
         """
@@ -322,11 +350,13 @@ class SprintScheduler:
             logger.error(f"Não foi possível calcular data de fim para task {task.id}")
             return False
             
+        # Armazena a data real de término e a data para o Azure DevOps
         task.start_date = start_date
         task.end_date = end_date
+        task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
-        logger.info(f"Task {task.id} agendada para {task.assignee} de {start_date} até {end_date}")
+        logger.info(f"Task {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         return True
 
     def _schedule_devops_task(self, task: Task, us: UserStory) -> bool:
@@ -386,11 +416,13 @@ class SprintScheduler:
             logger.error(f"Não foi possível calcular data de fim para task DevOps {task.id}")
             return False
             
+        # Armazena a data real de término e a data para o Azure DevOps
         task.start_date = start_date
         task.end_date = end_date
+        task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
-        logger.info(f"Task DevOps {task.id} agendada para {task.assignee} de {start_date} até {end_date}")
+        logger.info(f"Task DevOps {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         return True
 
     def _schedule_qa_plan_task(self, task: Task, us: UserStory) -> None:
@@ -619,6 +651,8 @@ class SprintScheduler:
             
             # Calcula horas restantes no período da última task
             current_time = latest_exec_date.time()
+            
+            # Se a task anterior terminou no fim do período
             if current_time == self.morning_end:
                 # Se terminou às 12:00, começa às 14:00
                 logger.info(f"Task {task.id} iniciará à tarde após task {latest_task.id} que terminou às 12:00")
@@ -629,9 +663,24 @@ class SprintScheduler:
                 logger.info(f"Task {task.id} iniciará no próximo dia após task {latest_task.id} que terminou às 17:00")
                 return self._create_datetime(next_date, 9)
             else:
-                # Se terminou em outro horário, começa imediatamente após
-                logger.info(f"Task {task.id} iniciará após task {latest_task.id} no mesmo período")
-                return latest_exec_date
+                # Se terminou em outro horário, verifica se ainda há tempo no período
+                if current_time < self.morning_end:
+                    # Se está de manhã e ainda há tempo, continua no mesmo período
+                    logger.info(f"Task {task.id} iniciará após task {latest_task.id} no mesmo período da manhã")
+                    return latest_exec_date
+                elif current_time < self.afternoon_end:
+                    # Se está à tarde e ainda há tempo, continua no mesmo período
+                    logger.info(f"Task {task.id} iniciará após task {latest_task.id} no mesmo período da tarde")
+                    return latest_exec_date
+                else:
+                    # Se passou do fim do período, vai para o próximo
+                    if current_time >= self.afternoon_end:
+                        next_date = latest_exec_date + timedelta(days=1)
+                        logger.info(f"Task {task.id} iniciará no próximo dia após task {latest_task.id} que passou do fim do período")
+                        return self._create_datetime(next_date, 9)
+                    else:
+                        logger.info(f"Task {task.id} iniciará à tarde após task {latest_task.id} que passou do fim do período da manhã")
+                        return self._create_datetime(latest_exec_date, 14)
     
         # Se não tem task anterior do executor, usa o início da sprint
         current_date = self.sprint.start_date
@@ -692,86 +741,65 @@ class SprintScheduler:
         # Garante que a data de início está na timezone correta
         current_date = start_date if start_date.tzinfo else start_date.replace(tzinfo=self.timezone)
         remaining_hours = task.estimated_hours
-        
-        # Controle de horas disponíveis no período atual
-        hours_left_in_period = 0
-        
+        real_end_date = None
+
         while remaining_hours > 0:
             # Verifica se é dia útil e não tem ausência
             if self._is_working_day(current_date, task.assignee):
                 current_time = current_date.time()
                 
                 # Determina em qual período estamos e quantas horas disponíveis
-                if current_time <= self.morning_end:
+                if self.morning_start <= current_time < self.morning_end:
                     # Período da manhã
-                    if current_time < self.morning_start:
-                        # Se está antes do início, considera todo o período
-                        hours_left_in_period = 3
-                        current_date = self._create_datetime(current_date, 9)
-                    else:
-                        # Calcula horas restantes até 12:00
-                        hours_left_in_period = (
-                            (self.morning_end.hour - current_time.hour) * 60 +
-                            (self.morning_end.minute - current_time.minute)
-                        ) / 60
-                        
-                elif current_time <= self.afternoon_end:
-                    if current_time < self.afternoon_start:
-                        # Se está antes do início da tarde, considera todo o período
-                        hours_left_in_period = 3
+                    period_end = self.morning_end
+                elif self.afternoon_start <= current_time < self.afternoon_end:
+                    # Período da tarde
+                    period_end = self.afternoon_end
+                elif current_time < self.morning_start:
+                    # Antes do início da manhã
+                    current_date = self._create_datetime(current_date, 9)
+                    period_end = self.morning_end
+                elif self.morning_end <= current_time < self.afternoon_start:
+                    # Entre períodos, pula para o início da tarde
+                    current_date = self._create_datetime(current_date, 14)
+                    period_end = self.afternoon_end
+                else:
+                    # Passou do horário da tarde, vai para o próximo dia de manhã
+                    current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                    continue
+
+                # Corrigido: cria period_end_dt com timezone
+                period_end_dt = datetime.combine(current_date.date(), period_end, tzinfo=self.timezone)
+                delta = (period_end_dt - current_date).total_seconds() / 3600
+                hours_left_in_period = max(0, delta)
+
+                if remaining_hours <= hours_left_in_period:
+                    # Termina dentro deste período
+                    real_end_date = current_date + timedelta(hours=remaining_hours)
+                    # Ajusta para o fim do período se necessário
+                    if real_end_date.time() > period_end:
+                        real_end_date = self._create_datetime(real_end_date, period_end.hour)
+                    return real_end_date
+                else:
+                    # Consome todo o período e avança
+                    remaining_hours -= hours_left_in_period
+                    
+                    # Avança para o próximo período útil
+                    if period_end == self.morning_end:
+                        # Vai para o início da tarde do mesmo dia
                         current_date = self._create_datetime(current_date, 14)
                     else:
-                        # Calcula horas restantes até 17:00
-                        hours_left_in_period = (
-                            (self.afternoon_end.hour - current_time.hour) * 60 +
-                            (self.afternoon_end.minute - current_time.minute)
-                        ) / 60
-                else:
-                    # Passou do horário da tarde, vai para o próximo dia
-                    current_date = self._create_datetime(current_date + timedelta(days=1), 9)
-                    hours_left_in_period = 3
+                        # Vai para o início da manhã do próximo dia
+                        current_date = self._create_datetime(current_date + timedelta(days=1), 9)
+                        
+                    # Se ainda há horas restantes, continua no loop
                     continue
-                
-                # Se tem menos horas restantes que o disponível no período
-                if remaining_hours <= hours_left_in_period:
-                    # Calcula o horário exato de término
-                    if current_time <= self.morning_end:
-                        # Se estamos de manhã, termina no horário calculado
-                        if remaining_hours == hours_left_in_period:
-                            # Se usa exatamente todas as horas, termina às 12:00
-                            return self._create_datetime(current_date, 12)
-                        else:
-                            # Se sobram horas, registra término às 12:00 mas guarda saldo
-                            return self._create_datetime(current_date, 12)
-                    else:
-                        # Se estamos à tarde, termina no horário calculado
-                        if remaining_hours == hours_left_in_period:
-                            # Se usa exatamente todas as horas, termina às 17:00
-                            return self._create_datetime(current_date, 17)
-                        else:
-                            # Se sobram horas, registra término às 17:00 mas guarda saldo
-                            return self._create_datetime(current_date, 17)
-                            
-                # Se precisa de mais horas que o disponível no período
-                remaining_hours -= hours_left_in_period
-                
-                # Passa para o próximo período
-                if current_time < self.afternoon_start:
-                    # Se estava de manhã, passa para tarde
-                    current_date = self._create_datetime(current_date, 14)
-                    hours_left_in_period = 3
-                else:
-                    # Se estava à tarde, passa para próximo dia
-                    current_date = self._create_datetime(current_date + timedelta(days=1), 9)
-                    hours_left_in_period = 3
-                    
             else:
-                # Se não é dia útil ou tem ausência, passa para o próximo dia
+                # Se não é dia útil ou tem ausência, passa para o próximo dia útil de manhã
                 current_date = self._create_datetime(current_date + timedelta(days=1), 9)
-                hours_left_in_period = 3
                 
-        # Se chegou aqui, termina no fim do último dia
-        return self._create_datetime(current_date, 17)
+        # Se chegou aqui, retorna o horário atual
+        return current_date
 
     def _is_working_day(self, date: datetime, executor: str) -> bool:
         """
@@ -870,9 +898,42 @@ class SprintScheduler:
             logger.error(f"Não foi possível calcular data de fim para task QA {task.id}")
             return False
             
+        # Armazena a data real de término e a data para o Azure DevOps
         task.start_date = start_date
         task.end_date = end_date
+        task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
-        logger.info(f"Task QA {task.id} agendada para {task.assignee} de {start_date} até {end_date}")
-        return True 
+        logger.info(f"Task QA {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
+        return True
+
+    def _convert_to_azure_time(self, date: datetime) -> datetime:
+        """
+        Converte o horário de término para o formato do Azure DevOps
+        
+        Args:
+            date: Data com horário real de término
+            
+        Returns:
+            datetime: Data com horário ajustado para o Azure DevOps
+        """
+        if not date:
+            return None
+            
+        current_time = date.time()
+        
+        # Se está entre 10:00 e 12:00, converte para 12:00
+        if time(10, 0) <= current_time <= time(12, 0):
+            return self._create_datetime(date, 12)
+        # Se está entre 14:00 e 17:00, converte para 17:00
+        elif time(14, 0) <= current_time <= time(17, 0):
+            return self._create_datetime(date, 17)
+        # Se está entre 12:00 e 14:00, mantém 12:00
+        elif time(12, 0) < current_time < time(14, 0):
+            return self._create_datetime(date, 12)
+        # Se está antes das 10:00, converte para 12:00
+        elif current_time < time(10, 0):
+            return self._create_datetime(date, 12)
+        # Se está depois das 17:00, converte para 17:00
+        else:
+            return self._create_datetime(date, 17) 

@@ -117,14 +117,24 @@ class AzureDevOpsClient:
         
         # Processa as User Stories
         for item in items["user_stories"]:
+            # Obtém as datas da User Story
+            start_date = None
+            end_date = None
+            
+            if item.fields.get("Microsoft.VSTS.Scheduling.StartDate"):
+                start_date = datetime.fromisoformat(item.fields["Microsoft.VSTS.Scheduling.StartDate"].replace('Z', '+00:00'))
+            
+            if item.fields.get("Microsoft.VSTS.Scheduling.DueDate"):
+                end_date = datetime.fromisoformat(item.fields["Microsoft.VSTS.Scheduling.DueDate"].replace('Z', '+00:00'))
+            
             us = UserStory(
                 id=str(item.id),
                 title=item.fields["System.Title"],
                 description=item.fields.get("System.Description"),
                 tasks=[],
                 assignee=item.fields.get("System.AssignedTo", {}).get("uniqueName") if item.fields.get("System.AssignedTo") else None,
-                start_date=None,
-                end_date=None,
+                start_date=start_date,
+                end_date=end_date,
                 story_points=item.fields.get("Microsoft.VSTS.Scheduling.StoryPoints")
             )
             user_stories[us.id] = us
@@ -173,6 +183,18 @@ class AzureDevOpsClient:
                 logger.warning(f"Task {item.id} tem parent_id {us_id} que não está nas User Stories obtidas")
                 continue
             
+            # Obtém as datas da task
+            start_date = None
+            end_date = None
+            azure_end_date = None
+            
+            if item.fields.get("Microsoft.VSTS.Scheduling.StartDate"):
+                start_date = datetime.fromisoformat(item.fields["Microsoft.VSTS.Scheduling.StartDate"].replace('Z', '+00:00'))
+            
+            if item.fields.get("Microsoft.VSTS.Scheduling.DueDate"):
+                end_date = datetime.fromisoformat(item.fields["Microsoft.VSTS.Scheduling.DueDate"].replace('Z', '+00:00'))
+                azure_end_date = end_date
+            
             task = Task(
                 id=str(item.id),
                 title=title,
@@ -181,8 +203,9 @@ class AzureDevOpsClient:
                 estimated_hours=float(item.fields.get("Microsoft.VSTS.Scheduling.OriginalEstimate", 0)),
                 assignee=item.fields.get("System.AssignedTo", {}).get("uniqueName") if item.fields.get("System.AssignedTo") else None,
                 dependencies=[],  # Será preenchido depois
-                start_date=None,
-                end_date=None,
+                start_date=start_date,
+                end_date=end_date,
+                azure_end_date=azure_end_date,
                 status=TaskStatus.PENDING,  # Todas tasks ativas começam como pendentes
                 parent_user_story_id=us_id
             )
@@ -274,17 +297,17 @@ class AzureDevOpsClient:
                         "value": task.start_date.isoformat()
                     })
                     
-                if task.end_date:
+                if task.azure_end_date:
                     task_operations.extend([
                         {
                             "op": "add",
                             "path": "/fields/Custom.CommittedDate",
-                            "value": task.end_date.isoformat()
+                            "value": task.azure_end_date.isoformat()
                         },
                         {
                             "op": "add",
                             "path": "/fields/Microsoft.VSTS.Scheduling.DueDate",
-                            "value": task.end_date.isoformat()
+                            "value": task.azure_end_date.isoformat()
                         }
                     ])
                     
