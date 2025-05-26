@@ -11,16 +11,14 @@ Um sistema inteligente de agendamento de tarefas para sprints que considera múl
 
 ## 📋 Índice
 
-- [Visão Geral](#visão-geral)
-- [Funcionalidades](#funcionalidades)
-- [Requisitos](#requisitos)
-- [Instalação](#instalação)
-- [Configuração](#configuração)
-- [Uso](#uso)
-- [Regras de Negócio](#regras-de-negócio)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Contribuição](#contribuição)
-- [Licença](#licença)
+- [Visão Geral](#-visão-geral)
+- [Funcionalidades](#-funcionalidades)
+- [Requisitos](#-requisitos)
+- [Instalação](#-instalação)
+- [Configuração](#️-configuração)
+- [Uso](#-uso)
+- [Regras de Negócio](#-regras-de-negócio)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
 
 ## 🎯 Visão Geral
 
