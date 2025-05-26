@@ -45,13 +45,13 @@ O Sprint Task Scheduler é uma ferramenta desenvolvida para otimizar o agendamen
 ## 🚀 Instalação
 
 1. Clone o repositório:
-     ```bash
+```bash
 git clone https://github.com/seu-usuario/sprint-task-scheduler.git
 cd sprint-task-scheduler
 ```
 
 2. Crie um ambiente virtual (recomendado):
-   ```bash
+```bash
 # Windows
    python -m venv venv
    .\venv\Scripts\activate
@@ -59,12 +59,12 @@ cd sprint-task-scheduler
 # Linux/macOS
    python3 -m venv venv
    source venv/bin/activate
-   ```
+```
 
 3. Instale as dependências:
-   ```bash
+```bash
    pip install -r requirements.txt
-   ```
+```
 
 ## ⚙️ Configuração
 
