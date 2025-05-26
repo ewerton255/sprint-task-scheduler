@@ -191,8 +191,8 @@ class AzureDevOpsClient:
             if item.fields.get("Microsoft.VSTS.Scheduling.StartDate"):
                 start_date = datetime.fromisoformat(item.fields["Microsoft.VSTS.Scheduling.StartDate"].replace('Z', '+00:00'))
             
-            if item.fields.get("Microsoft.VSTS.Scheduling.DueDate"):
-                end_date = datetime.fromisoformat(item.fields["Microsoft.VSTS.Scheduling.DueDate"].replace('Z', '+00:00'))
+            if item.fields.get("Custom.CommittedDate"):
+                end_date = datetime.fromisoformat(item.fields["Custom.CommittedDate"].replace('Z', '+00:00'))
                 azure_end_date = end_date
             
             task = Task(
