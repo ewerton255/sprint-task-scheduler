@@ -1,0 +1,18 @@
+{
+    "backend": [
+        "backend-executor-1@empresa.com",
+        "backend-executor-2@empresa.com"
+    ],
+    "frontend": [
+        "frontend-executor-1@empresa.com",
+        "frontend-executor-2@empresa.com"
+    ],
+    "qa": [
+        "qa-executor-1@empresa.com",
+        "qa-executor-2@empresa.com"
+    ],
+    "devops": [
+        "devops-executor-1@empresa.com",
+        "devops-executor-2@empresa.com"
+    ]
+}

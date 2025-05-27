@@ -1,0 +1,20 @@
+{
+    "azure_devops": {
+        "organization": "",
+        "project": "",
+        "token": ""
+    },
+    "sprint": {
+        "name": "",
+        "year": "",
+        "quarter": "",
+        "start_date": "",
+        "end_date": ""
+    },
+    "team": "",
+    "executors_file": "config/executors.json",
+    "dayoffs_file": "config/dayoffs.json",
+    "dependencies_file": "config/dependencies.json",
+    "output_dir": "./output",
+    "timezone": "America/Sao_Paulo"
+}

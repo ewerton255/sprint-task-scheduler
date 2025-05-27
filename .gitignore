@@ -32,6 +32,9 @@ output/
 .env
 .env.local
 config/setup.json
+config/dayoffs.json
+config/executors.json
+config/dependencies.json
 
 # Arquivos do sistema
 .DS_Store
