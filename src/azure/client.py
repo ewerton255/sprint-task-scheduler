@@ -48,13 +48,17 @@ class AzureDevOpsClient:
         
         # Primeiro, busca as User Stories da sprint
         wiql_user_stories = f"""
-        SELECT [System.Id]
+        SELECT [System.Id],
+               [System.Title],
+               [Microsoft.VSTS.Common.BacklogPriority],
+               [System.BoardColumn],
+               [Microsoft.VSTS.Common.StackRank]
         FROM WorkItems
         WHERE [System.TeamProject] = '{self.project}'
         AND [System.AreaPath] = '{team}'
         AND [System.IterationPath] = '{iteration_path}'
         AND [System.WorkItemType] = 'User Story'
-        ORDER BY [System.Id]
+        ORDER BY [Microsoft.VSTS.Common.StackRank] ASC
         """
         
         # Executa query para User Stories
@@ -66,6 +70,11 @@ class AzureDevOpsClient:
         # Obtém detalhes das User Stories
         us_ids = [item.id for item in us_results]
         user_stories = self.wit_client.get_work_items(us_ids)
+        for us in user_stories:
+            backlog_priority = us.fields.get("Microsoft.VSTS.Common.BacklogPriority")
+            stack_rank = us.fields.get("Microsoft.VSTS.Common.StackRank")
+            board_column = us.fields.get("System.BoardColumn")
+            logger.info(f"User Story {us.id} - BacklogPriority: {backlog_priority}, StackRank: {stack_rank}, BoardColumn: {board_column}")
         logger.info(f"Obtidas {len(user_stories)} User Stories da sprint {sprint_name}")
         
         # Agora, busca as Tasks vinculadas a essas User Stories
@@ -78,12 +87,15 @@ class AzureDevOpsClient:
                    [System.AssignedTo],
                    [System.State],
                    [Microsoft.VSTS.Scheduling.OriginalEstimate],
-                   [System.Description]
+                   [System.Description],
+                   [Microsoft.VSTS.Common.BacklogPriority],
+                   [System.BoardColumn],
+                   [Microsoft.VSTS.Common.StackRank]
             FROM WorkItems
             WHERE [System.TeamProject] = '{self.project}'
             AND [System.WorkItemType] = 'Task'
             AND [System.Parent] IN ({','.join(map(str, us_ids))})
-            ORDER BY [System.Id]
+            ORDER BY [Microsoft.VSTS.Common.StackRank] ASC
             """
             
             # Executa query para Tasks
@@ -91,6 +103,11 @@ class AzureDevOpsClient:
             if task_results:
                 task_ids = [item.id for item in task_results]
                 tasks = self.wit_client.get_work_items(task_ids, expand="All")
+                for task in tasks:
+                    backlog_priority = task.fields.get("Microsoft.VSTS.Common.BacklogPriority")
+                    stack_rank = task.fields.get("Microsoft.VSTS.Common.StackRank")
+                    board_column = task.fields.get("System.BoardColumn")
+                    logger.info(f"Task {task.id} - BacklogPriority: {backlog_priority}, StackRank: {stack_rank}, BoardColumn: {board_column}")
                 logger.info(f"Obtidas {len(tasks)} Tasks vinculadas às User Stories")
             else:
                 logger.warning("Nenhuma Task encontrada vinculada às User Stories")
