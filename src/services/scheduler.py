@@ -48,6 +48,7 @@ class SprintScheduler:
         elif base_date.tzinfo != self.timezone:
             base_date = base_date.astimezone(self.timezone)
             
+        # Cria novo datetime mantendo a mesma data
         return datetime(
             base_date.year,
             base_date.month,
@@ -357,6 +358,7 @@ class SprintScheduler:
         task.status = TaskStatus.SCHEDULED
         
         logger.info(f"Task {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
+        logger.info(f"Task {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
         return True
 
     def _schedule_devops_task(self, task: Task, us: UserStory) -> bool:
@@ -740,6 +742,9 @@ class SprintScheduler:
         """
         # Garante que a data de início está na timezone correta
         current_date = start_date if start_date.tzinfo else start_date.replace(tzinfo=self.timezone)
+        if current_date.tzinfo != self.timezone:
+            current_date = current_date.astimezone(self.timezone)
+            
         remaining_hours = task.estimated_hours
         real_end_date = None
 
@@ -878,6 +883,11 @@ class SprintScheduler:
         if task.status in [TaskStatus.CLOSED, TaskStatus.CANCELLED]:
             logger.info(f"Task QA {task.id} já está fechada ou cancelada")
             return True
+            
+        # Verifica se a task já foi agendada
+        if task.status == TaskStatus.SCHEDULED:
+            logger.info(f"Task QA {task.id} já está agendada, ignorando")
+            return True
         
         # Atribui executor se necessário
         if not task.assignee:
@@ -933,6 +943,7 @@ class SprintScheduler:
         task.status = TaskStatus.SCHEDULED
         
         logger.info(f"Task QA {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
+        logger.info(f"Task QA {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
         return True
 
     def _convert_to_azure_time(self, date: datetime) -> datetime:
@@ -948,20 +959,32 @@ class SprintScheduler:
         if not date:
             return None
             
+        # Garante que a data está na timezone correta
+        if date.tzinfo != self.timezone:
+            date = date.astimezone(self.timezone)
+            
         current_time = date.time()
+        
+        # Cria uma nova data mantendo o mesmo dia, mês e ano
+        new_date = datetime(
+            date.year,
+            date.month,
+            date.day,
+            tzinfo=self.timezone
+        )
         
         # Se está entre 10:00 e 12:00, converte para 12:00
         if time(10, 0) <= current_time <= time(12, 0):
-            return self._create_datetime(date, 12)
+            return new_date.replace(hour=12, minute=0)
         # Se está entre 14:00 e 17:00, converte para 17:00
         elif time(14, 0) <= current_time <= time(17, 0):
-            return self._create_datetime(date, 17)
+            return new_date.replace(hour=17, minute=0)
         # Se está entre 12:00 e 14:00, mantém 12:00
         elif time(12, 0) < current_time < time(14, 0):
-            return self._create_datetime(date, 12)
+            return new_date.replace(hour=12, minute=0)
         # Se está antes das 10:00, converte para 12:00
         elif current_time < time(10, 0):
-            return self._create_datetime(date, 12)
+            return new_date.replace(hour=12, minute=0)
         # Se está depois das 17:00, converte para 17:00
         else:
-            return self._create_datetime(date, 17) 
+            return new_date.replace(hour=17, minute=0) 
