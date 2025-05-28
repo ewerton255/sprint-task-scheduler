@@ -18,7 +18,8 @@ class SprintScheduler:
         """
         self.sprint = sprint
         self.executors = executors
-        self.dayoffs = dayoffs
+        # Normaliza as chaves do dicionário de dayoffs para lowercase
+        self.dayoffs = {k.lower(): v for k, v in dayoffs.items()}
         
         # Define timezone padrão como UTC-3 (Brasília)
         self.timezone = timezone(timedelta(hours=-3))
@@ -115,7 +116,9 @@ class SprintScheduler:
         blocked_tasks = []
         
         # Primeiro agenda tasks regulares (não-QA e não-DevOps)
-        regular_tasks = [t for t in us.tasks if not (t.is_qa_test_plan or t.is_devops_task)]
+        regular_tasks = [t for t in us.tasks 
+                        if not (t.is_qa_test_plan or t.is_devops_task or t.work_front == WorkFront.QA)]
+        logger.info(f"US {us.id} - Tasks regulares encontradas: {[t.id for t in regular_tasks]}")
         
         # Ordena as tasks por número de dependências (menos dependências primeiro)
         regular_tasks.sort(key=lambda t: len(t.dependencies) if t.dependencies else 0)
@@ -126,26 +129,32 @@ class SprintScheduler:
             still_to_schedule = []
             
             for task in regular_tasks:
+                logger.info(f"Processando task {task.id} como task regular")
                 if not self._schedule_task(task):
                     # Se a task não pode ser agendada, verifica se é por dependência
                     if task.dependencies:
                         blocked_tasks.append(task)
+                        logger.info(f"Task {task.id} bloqueada por dependências: {task.dependencies}")
                     else:
                         still_to_schedule.append(task)
+                        logger.info(f"Task {task.id} não pôde ser agendada, será tentada novamente")
                 else:
                     progress = True
                     # Tenta agendar tasks bloqueadas após cada agendamento bem sucedido
                     still_blocked = []
                     for blocked_task in blocked_tasks:
+                        logger.info(f"Tentando agendar task bloqueada {blocked_task.id} após sucesso da task {task.id}")
                         if self._schedule_task(blocked_task):
                             logger.info(f"Task {blocked_task.id} desbloqueada após agendamento da task {task.id}")
                             progress = True
                         else:
                             still_blocked.append(blocked_task)
+                            logger.info(f"Task {blocked_task.id} permanece bloqueada")
                     blocked_tasks = still_blocked
             
             # Se não houve progresso e ainda há tasks para agendar, para o loop
             if not progress and regular_tasks:
+                logger.info(f"US {us.id} - Sem progresso no agendamento de tasks regulares, finalizando loop")
                 break
                 
             regular_tasks = still_to_schedule
@@ -155,27 +164,38 @@ class SprintScheduler:
             logger.info(f"Tentando agendar {len(blocked_tasks)} tasks bloqueadas após agendamento de todas as tasks regulares")
             still_blocked = []
             for blocked_task in blocked_tasks:
+                logger.info(f"Tentativa final de agendamento para task bloqueada {blocked_task.id}")
                 if self._schedule_task(blocked_task):
                     logger.info(f"Task {blocked_task.id} desbloqueada após agendamento de todas as tasks regulares")
                 else:
                     still_blocked.append(blocked_task)
+                    logger.info(f"Task {blocked_task.id} permanece bloqueada após tentativa final")
             blocked_tasks = still_blocked
             
         # Depois agenda tasks de QA (exceto plano de testes)
         qa_tasks = [t for t in us.tasks 
                     if not t.is_qa_test_plan 
                     and t.work_front == WorkFront.QA]
+        logger.info(f"US {us.id} - Tasks de QA encontradas: {[t.id for t in qa_tasks]}")
+        
         for task in qa_tasks:
+            logger.info(f"Processando task {task.id} como task de QA")
             self._schedule_qa_task(task, us)
             
         # Depois agenda tasks DevOps
         devops_tasks = [t for t in us.tasks if t.is_devops_task]
+        logger.info(f"US {us.id} - Tasks DevOps encontradas: {[t.id for t in devops_tasks]}")
+        
         for task in devops_tasks:
+            logger.info(f"Processando task {task.id} como task DevOps")
             self._schedule_devops_task(task, us)
             
         # Por fim agenda tasks de QA Plano de Testes
         qa_plan_tasks = [t for t in us.tasks if t.is_qa_test_plan]
+        logger.info(f"US {us.id} - Tasks de Plano de Testes encontradas: {[t.id for t in qa_plan_tasks]}")
+        
         for task in qa_plan_tasks:
+            logger.info(f"Processando task {task.id} como task de Plano de Testes")
             self._schedule_qa_plan_task(task, us)
         
         # Tenta atualizar a US após agendar todas as tasks
@@ -585,9 +605,9 @@ class SprintScheduler:
         allocated_hours = sum(t.estimated_hours for t in assigned_tasks 
                              if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED])
         
-        # Calcula total de horas de ausência
+        # Calcula total de horas de ausência (usando email em lowercase)
         dayoff_hours = 0
-        executor_dayoffs = self.dayoffs.get(executor, [])
+        executor_dayoffs = self.dayoffs.get(executor.lower(), [])
         for dayoff in executor_dayoffs:
             if dayoff.period == "full":
                 dayoff_hours += 6
@@ -843,8 +863,8 @@ class SprintScheduler:
         normalized_date = date.strftime('%Y-%m-%d')
         current_time = date.time()
             
-        # Verifica se tem ausência
-        executor_dayoffs = self.dayoffs.get(executor, [])
+        # Verifica se tem ausência (usando email em lowercase)
+        executor_dayoffs = self.dayoffs.get(executor.lower(), [])
         for dayoff in executor_dayoffs:
             # Normaliza a data do dayoff para YYYY-MM-DD
             normalized_dayoff_date = dayoff.date.strftime('%Y-%m-%d')
