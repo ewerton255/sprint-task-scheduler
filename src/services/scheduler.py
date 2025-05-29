@@ -358,6 +358,13 @@ class SprintScheduler:
             task.status = TaskStatus.BLOCKED
             return False
             
+        # Verifica se o executor tem capacidade suficiente
+        executor_availability = self._calculate_executor_availability(task.assignee)
+        if executor_availability < task.estimated_hours:
+            logger.warning(f"Executor {task.assignee} não tem capacidade suficiente para task {task.id}. "
+                         f"Disponível: {executor_availability:.1f}h, Necessário: {task.estimated_hours:.1f}h")
+            return False
+            
         # Calcula datas de início e fim usando o executor atribuído
         start_date = self._get_earliest_start_date(task)
         
@@ -379,6 +386,7 @@ class SprintScheduler:
         
         logger.info(f"Task {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         logger.info(f"Task {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
+        logger.info(f"Task {task.id} - Capacidade do executor {task.assignee} após agendamento: {executor_availability - task.estimated_hours:.1f}h")
         return True
 
     def _schedule_devops_task(self, task: Task, us: UserStory) -> bool:
@@ -447,56 +455,75 @@ class SprintScheduler:
         logger.info(f"Task DevOps {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         return True
 
-    def _schedule_qa_plan_task(self, task: Task, us: UserStory) -> None:
+    def _schedule_qa_plan_task(self, task: Task, us: UserStory) -> bool:
         """
         Agenda uma task de QA Plano de Testes
         
         Args:
             task: Task de QA Plano de Testes a ser agendada
             us: User Story pai
+            
+        Returns:
+            bool: True se a task foi agendada com sucesso, False se ficou bloqueada
         """
-        # Verifica se todas as outras tasks estão agendadas
-        other_tasks = [t for t in us.tasks 
-                      if not t.is_qa_test_plan 
-                      and t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
-        
-        if not all(t.status == TaskStatus.SCHEDULED for t in other_tasks):
-            logger.warning(f"Task QA Plano {task.id} aguardando conclusão das outras tasks")
-            return
-        
-        # Procura executor QA que já tenha tasks na US
-        qa_tasks = [t for t in us.tasks 
-                    if t.work_front == WorkFront.QA 
-                    and not t.is_qa_test_plan
-                    and t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
-        
-        if qa_tasks:
-            # Usa o mesmo executor das outras tasks QA
-            task.assignee = qa_tasks[0].assignee
-        else:
-            # Se não tem tasks QA, escolhe executor com maior disponibilidade
-            qa_executors = getattr(self.executors, WorkFront.QA.value, [])
-            best_executor = None
-            best_availability = -1
+        if task.status in [TaskStatus.CLOSED, TaskStatus.CANCELLED]:
+            logger.info(f"Task QA Plano {task.id} já está fechada ou cancelada")
+            return True
             
-            for executor in qa_executors:
-                availability = self._calculate_executor_availability(executor)
-                if availability > best_availability:
-                    best_executor = executor
-                    best_availability = availability
-            
-            task.assignee = best_executor
+        # Verifica se a task já foi agendada
+        if task.status == TaskStatus.SCHEDULED:
+            logger.info(f"Task QA Plano {task.id} já está agendada, ignorando")
+            return True
+        
+        # Atribui executor se necessário
+        if not task.assignee:
+            task.assignee = self._get_best_executor(task)
         
         if not task.assignee:
-            logger.error(f"Não foi possível encontrar executor QA para task {task.id}")
-            return
+            logger.error(f"Não foi possível encontrar executor para task QA Plano {task.id}")
+            return False
         
-        # Task de plano não tem data de término
-        task.start_date = None
-        task.end_date = None
+        # Se a task não tem estimativa, apenas atribui o executor e marca como agendada
+        if not task.estimated_hours:
+            task.status = TaskStatus.SCHEDULED
+            logger.info(f"Task QA Plano {task.id} agendada para {task.assignee} sem data de término (sem estimativa)")
+            return True
+        
+        # Pega todas as tasks agendadas da US
+        scheduled_tasks = [t for t in us.tasks if t.status == TaskStatus.SCHEDULED]
+        
+        # Pega a última data de término das tasks de QA
+        qa_tasks = [t for t in scheduled_tasks if t.work_front == WorkFront.QA]
+        start_date = None
+        
+        if qa_tasks:
+            qa_dates = [t.end_date for t in qa_tasks if t.end_date]
+            if qa_dates:
+                start_date = max(qa_dates)
+                logger.info(f"Task QA Plano {task.id} iniciará após última task QA em {start_date}")
+        
+        # Se não tem data específica, usa a data mais cedo possível
+        if not start_date:
+            start_date = self._get_earliest_start_date(task)
+            if not start_date:
+                logger.error(f"Não foi possível calcular data de início para task QA Plano {task.id}")
+                return False
+        
+        # Calcula data de término
+        end_date = self._calculate_end_date(task, start_date)
+        if not end_date:
+            logger.error(f"Não foi possível calcular data de fim para task QA Plano {task.id}")
+            return False
+            
+        # Armazena a data real de término e a data para o Azure DevOps
+        task.start_date = start_date
+        task.end_date = end_date
+        task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
-        logger.info(f"Task QA Plano {task.id} agendada para {task.end_date}")
+        logger.info(f"Task QA Plano {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
+        logger.info(f"Task QA Plano {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
+        return True
 
     def _check_dependencies(self, task: Task) -> bool:
         """
@@ -917,6 +944,13 @@ class SprintScheduler:
             logger.error(f"Não foi possível encontrar executor para task QA {task.id}")
             return False
         
+        # Verifica se o executor tem capacidade suficiente
+        executor_availability = self._calculate_executor_availability(task.assignee)
+        if executor_availability < task.estimated_hours:
+            logger.warning(f"Executor {task.assignee} não tem capacidade suficiente para task QA {task.id}. "
+                         f"Disponível: {executor_availability:.1f}h, Necessário: {task.estimated_hours:.1f}h")
+            return False
+        
         # Determina se é task de backend ou frontend baseado no título
         is_backend_qa = "backend" in task.title.lower()
         is_frontend_qa = "frontend" in task.title.lower()
@@ -926,22 +960,35 @@ class SprintScheduler:
         
         # Define data de início baseada no tipo de QA
         start_date = None
+        
+        # Pega todas as tasks do executor
+        executor_tasks = [t for t in self.sprint.get_tasks_by_assignee(task.assignee) 
+                         if t.status == TaskStatus.SCHEDULED]
+        
         if is_backend_qa:
-            # Pega a última data de término das tasks de backend
+            # Pega a maior data entre:
+            # 1. Última data de término das tasks de backend da US
+            # 2. Última data de término das tasks do executor
             backend_tasks = [t for t in scheduled_tasks if t.work_front == WorkFront.BACKEND]
-            if backend_tasks:
-                backend_dates = [t.end_date for t in backend_tasks if t.end_date]
-                if backend_dates:
-                    start_date = max(backend_dates)
-                    logger.info(f"Task QA Backend {task.id} iniciará após última task backend em {start_date}")
+            backend_dates = [t.end_date for t in backend_tasks if t.end_date]
+            executor_dates = [t.end_date for t in executor_tasks if t.end_date]
+            
+            all_dates = backend_dates + executor_dates
+            if all_dates:
+                start_date = max(all_dates)
+                logger.info(f"Task QA Backend {task.id} iniciará após última task backend em {start_date}")
         elif is_frontend_qa:
-            # Pega a última data de término das tasks de frontend
+            # Pega a maior data entre:
+            # 1. Última data de término das tasks de frontend da US
+            # 2. Última data de término das tasks do executor
             frontend_tasks = [t for t in scheduled_tasks if t.work_front == WorkFront.FRONTEND]
-            if frontend_tasks:
-                frontend_dates = [t.end_date for t in frontend_tasks if t.end_date]
-                if frontend_dates:
-                    start_date = max(frontend_dates)
-                    logger.info(f"Task QA Frontend {task.id} iniciará após última task frontend em {start_date}")
+            frontend_dates = [t.end_date for t in frontend_tasks if t.end_date]
+            executor_dates = [t.end_date for t in executor_tasks if t.end_date]
+            
+            all_dates = frontend_dates + executor_dates
+            if all_dates:
+                start_date = max(all_dates)
+                logger.info(f"Task QA Frontend {task.id} iniciará após última task frontend em {start_date}")
         
         # Se não tem data específica, usa a data mais cedo possível
         if not start_date:
@@ -964,6 +1011,7 @@ class SprintScheduler:
         
         logger.info(f"Task QA {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         logger.info(f"Task QA {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
+        logger.info(f"Task QA {task.id} - Capacidade do executor {task.assignee} após agendamento: {executor_availability - task.estimated_hours:.1f}h")
         return True
 
     def _convert_to_azure_time(self, date: datetime) -> datetime:

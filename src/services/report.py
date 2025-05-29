@@ -140,60 +140,33 @@ class ReportGenerator:
         """Gera o conteúdo do relatório em Markdown"""
         report = []
         
-        # Cabeçalho
-        report.extend([
-            f"# Relatório da Sprint: {self.sprint.name} - {self.team_name}\n",
-            "## 1. Resumo Geral da Sprint\n",
-            f"- Sprint: **{self.sprint.name}**",
-            f"- Período: {self.sprint.start_date.strftime('%d/%m/%Y')} a {self.sprint.end_date.strftime('%d/%m/%Y')}",
-            f"- Total de User Stories planejadas: {len(self.sprint.user_stories)}\n"
-        ])
-        
-        # User Stories
-        report.extend([
-            "## 2. User Stories planejadas\n",
-            "| ID | Título | Responsável | Data de Finalização | Story Points |",
-            "|-----|---------|-------------|-------------------|--------------|"
-        ])
-        
-        # Mantém a ordem original das User Stories
-        for us in self.sprint.user_stories:
-            end_date = us.end_date.strftime('%d/%m/%Y') if us.end_date else '-'
-            report.append(
-                f"| {us.id} | {us.title} | {us.assignee or '-'} | {end_date} | {us.story_points or '-'} |"
-            )
-        
+        # Título
+        report.append(f"# Relatório de Agendamento - Sprint {self.sprint.name}")
         report.append("")
         
-        # Capacidade dos Executores
-        report.extend([
-            "## 3. Capacidade dos Executores\n",
-            "| Executor | Capacidade Total (h) | Capacidade Usada (h) | Capacidade Disponível (h) |",
-            "|----------|---------------------|---------------------|-------------------------|"
-        ])
+        # Informações da Sprint
+        report.append("## 📅 Informações da Sprint")
+        report.append("")
+        report.append(f"- **Início:** {self.sprint.start_date.strftime('%d/%m/%Y')}")
+        report.append(f"- **Término:** {self.sprint.end_date.strftime('%d/%m/%Y')}")
+        report.append("")
         
-        # Calcula capacidade total e usada por executor
-        executor_capacity = {}
+        # Capacidade da Equipe
+        report.append("## 👥 Capacidade da Equipe")
+        report.append("")
+        report.append("| Executor | Capacidade Total (h) | Capacidade Usada (h) | Capacidade Disponível (h) |")
+        report.append("|----------|---------------------|---------------------|--------------------------|")
         
-        # Primeiro calcula a capacidade usada baseada nas tasks
-        for us in self.sprint.user_stories:
-            # Mantém a ordem original das tasks
-            for task in us.tasks:
-                if task.assignee:
-                    if task.assignee not in executor_capacity:
-                        executor_capacity[task.assignee] = {"total": 0, "used": 0}
-                    
-                    # Adiciona horas estimadas à capacidade usada
-                    if task.estimated_hours:
-                        executor_capacity[task.assignee]["used"] += task.estimated_hours
-        
-        # Calcula capacidade total considerando dias úteis e ausências
+        # Calcula capacidade total considerando dias úteis
         total_working_days = self._count_working_days(self.sprint.start_date, self.sprint.end_date)
         base_capacity = total_working_days * 6  # 6 horas por dia útil
         
         # Primeiro, define a capacidade base para todos os executores
-        for executor in executor_capacity.keys():
-            executor_capacity[executor]["total"] = base_capacity
+        executor_capacity = {}
+        for us in self.sprint.user_stories:
+            for task in us.tasks:
+                if task.assignee and task.assignee not in executor_capacity:
+                    executor_capacity[task.assignee] = {"total": base_capacity, "used": 0}
         
         # Depois, subtrai as ausências para executores que têm dayoffs
         for executor, dayoffs in self.dayoffs.items():
@@ -203,6 +176,12 @@ class ReportGenerator:
                         executor_capacity[executor]["total"] -= 6  # Subtrai 6 horas para dia inteiro
                     else:
                         executor_capacity[executor]["total"] -= 3  # Subtrai 3 horas para meio período
+        
+        # Por fim, calcula a capacidade usada baseada nas tasks
+        for us in self.sprint.user_stories:
+            for task in us.tasks:
+                if task.assignee and task.estimated_hours:
+                    executor_capacity[task.assignee]["used"] += task.estimated_hours
         
         # Adiciona informações ao relatório
         for executor, capacity in executor_capacity.items():
