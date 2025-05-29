@@ -250,38 +250,28 @@ class SprintScheduler:
 
     def _try_update_user_story(self, us: UserStory) -> None:
         """
-        Tenta atualizar os dados da User Story se todas as tasks estiverem agendadas
+        Atualiza os dados da User Story considerando todas as tasks, mesmo as não agendadas
         
         Args:
             us: User Story a ser atualizada
         """
         # Considera todas as tasks ativas (exceto plano de testes que não tem data de fim)
         active_tasks = [t for t in us.tasks 
-                       if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]
-                       and not t.is_qa_test_plan]
+                       if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
         
-        # Verifica se todas as tasks ativas têm responsável e datas definidas
-        all_tasks_ready = all(
-            t.status == TaskStatus.SCHEDULED and 
-            t.assignee is not None and 
-            t.start_date is not None and 
-            t.end_date is not None 
-            for t in active_tasks
-        )
-        
-        if not all_tasks_ready:
-            logger.info(f"User Story {us.id} ainda tem tasks pendentes de agendamento")
-            return
-        
-        # Calcula responsável (executor com mais tasks)
+        # Calcula responsável (executor com mais tasks agendadas)
         assignee_count = {}
         assignee_fronts = {}  # Mapeia executores para suas frentes de trabalho
         
-        for task in active_tasks:
-            assignee_count[task.assignee] = assignee_count.get(task.assignee, 0) + 1
-            # Guarda a frente de trabalho do executor
-            if task.assignee not in assignee_fronts:
-                assignee_fronts[task.assignee] = task.work_front
+        # Considera apenas tasks agendadas para definir o responsável
+        scheduled_tasks = [t for t in active_tasks if t.status == TaskStatus.SCHEDULED]
+        
+        for task in scheduled_tasks:
+            if task.assignee:
+                assignee_count[task.assignee] = assignee_count.get(task.assignee, 0) + 1
+                # Guarda a frente de trabalho do executor
+                if task.assignee not in assignee_fronts:
+                    assignee_fronts[task.assignee] = task.work_front
         
         if assignee_count:
             # Encontra o maior número de tasks
@@ -303,21 +293,21 @@ class SprintScheduler:
                             break
                     if us.assignee:  # Se encontrou, para de procurar
                         break
-            
+        
             # Se não encontrou nenhum backend/frontend, usa o primeiro da lista
             if not us.assignee and top_assignees:
                 us.assignee = top_assignees[0]
         
-        # Calcula datas considerando todas as tasks agendadas
-        start_dates = [t.start_date for t in active_tasks]
-        end_dates = [t.azure_end_date for t in active_tasks]
+        # Calcula datas considerando apenas as tasks agendadas
+        start_dates = [t.start_date for t in scheduled_tasks if t.start_date]
+        end_dates = [t.azure_end_date for t in scheduled_tasks if t.azure_end_date]
         
         if start_dates and end_dates:
             us.start_date = min(start_dates)
             us.end_date = max(end_dates)
         
-        # Calcula story points baseado nas horas estimadas
-        total_estimated_hours = sum(t.estimated_hours for t in active_tasks)
+        # Calcula story points baseado apenas nas tasks agendadas
+        total_estimated_hours = sum(t.estimated_hours for t in scheduled_tasks if t.estimated_hours)
         
         # Tabela de conversão de horas para story points conforme regras
         if total_estimated_hours <= 1:
@@ -341,7 +331,16 @@ class SprintScheduler:
         else:
             us.story_points = 55
         
-        logger.info(f"User Story {us.id} atualizada após todas as tasks agendadas: "
+        # Registra tasks não agendadas
+        not_scheduled_tasks = [t for t in active_tasks if t.status != TaskStatus.SCHEDULED]
+        if not_scheduled_tasks:
+            for task in not_scheduled_tasks:
+                reason = "falta de capacity" if task.assignee else "sem executor disponível"
+                if task.end_date and task.end_date.date() > self.sprint.end_date.date():
+                    reason = "data de término após fim da sprint"
+                logger.warning(f"Task {task.id} da US {us.id} não foi agendada: {reason}")
+        
+        logger.info(f"User Story {us.id} atualizada: "
                     f"responsável={us.assignee}, início={us.start_date}, fim={us.end_date}, "
                     f"SP={us.story_points}, horas_totais={total_estimated_hours}")
 
