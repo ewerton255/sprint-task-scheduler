@@ -29,6 +29,49 @@ class SprintScheduler:
         self.morning_end = time(12, 0)
         self.afternoon_start = time(14, 0)
         self.afternoon_end = time(17, 0)
+        
+        # Inicializa o dicionário de capacity atual dos executores
+        self._initialize_executor_capacity()
+
+    def _initialize_executor_capacity(self) -> None:
+        """Inicializa a capacity atual de cada executor"""
+        self.executor_capacity = {}
+        
+        # Obtém todos os executores únicos de todas as frentes
+        all_executors = set()
+        for front in WorkFront:
+            executors_list = getattr(self.executors, front.value, [])
+            all_executors.update(executors_list)
+        
+        # Inicializa a capacity de cada executor
+        for executor in all_executors:
+            self.executor_capacity[executor.lower()] = self._calculate_executor_availability(executor)
+            logger.info(f"Capacity inicial do executor {executor}: {self.executor_capacity[executor.lower()]:.1f}h")
+
+    def _update_executor_capacity(self, executor: str, hours: float) -> None:
+        """
+        Atualiza a capacity atual de um executor
+        
+        Args:
+            executor: Email do executor
+            hours: Horas a serem deduzidas da capacity
+        """
+        executor_key = executor.lower()
+        if executor_key in self.executor_capacity:
+            self.executor_capacity[executor_key] -= hours
+            logger.info(f"Capacity atualizada do executor {executor}: {self.executor_capacity[executor_key]:.1f}h")
+
+    def _get_executor_current_capacity(self, executor: str) -> float:
+        """
+        Obtém a capacity atual de um executor
+        
+        Args:
+            executor: Email do executor
+            
+        Returns:
+            float: Capacity atual do executor
+        """
+        return self.executor_capacity.get(executor.lower(), 0.0)
 
     def _create_datetime(self, base_date: datetime, hour: int, minute: int = 0) -> datetime:
         """
@@ -358,11 +401,11 @@ class SprintScheduler:
             task.status = TaskStatus.BLOCKED
             return False
             
-        # Verifica se o executor tem capacidade suficiente
-        executor_availability = self._calculate_executor_availability(task.assignee)
-        if executor_availability < task.estimated_hours:
-            logger.warning(f"Executor {task.assignee} não tem capacidade suficiente para task {task.id}. "
-                         f"Disponível: {executor_availability:.1f}h, Necessário: {task.estimated_hours:.1f}h")
+        # Verifica se o executor tem capacity suficiente
+        current_capacity = self._get_executor_current_capacity(task.assignee)
+        if current_capacity < task.estimated_hours:
+            logger.warning(f"Executor {task.assignee} não tem capacity suficiente para task {task.id}. "
+                         f"Disponível: {current_capacity:.1f}h, Necessário: {task.estimated_hours:.1f}h")
             return False
             
         # Calcula datas de início e fim usando o executor atribuído
@@ -384,9 +427,12 @@ class SprintScheduler:
         task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
+        # Atualiza a capacity do executor
+        self._update_executor_capacity(task.assignee, task.estimated_hours)
+        
         logger.info(f"Task {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         logger.info(f"Task {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
-        logger.info(f"Task {task.id} - Capacidade do executor {task.assignee} após agendamento: {executor_availability - task.estimated_hours:.1f}h")
+        logger.info(f"Task {task.id} - Capacity do executor {task.assignee} após agendamento: {self._get_executor_current_capacity(task.assignee):.1f}h")
         return True
 
     def _schedule_devops_task(self, task: Task, us: UserStory) -> bool:
@@ -575,12 +621,19 @@ class SprintScheduler:
                       and t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
         
         if front_tasks:
-            # Se já existe executor para a frente, mantém o mesmo
-            return front_tasks[0].assignee
+            # Se já existe executor para a frente, verifica se ele tem capacity
+            current_executor = front_tasks[0].assignee
+            if self._get_executor_current_capacity(current_executor) >= task.estimated_hours:
+                return current_executor
             
         # Calcula carga de trabalho atual de cada executor
         executor_loads = {}
         for executor in executors_list:
+            # Verifica se o executor tem capacity suficiente
+            current_capacity = self._get_executor_current_capacity(executor)
+            if current_capacity < task.estimated_hours:
+                continue
+                
             # Considera apenas tasks agendadas e ativas
             assigned_tasks = [t for t in self.sprint.get_tasks_by_assignee(executor) 
                             if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
@@ -590,26 +643,20 @@ class SprintScheduler:
             front_hours = sum(t.estimated_hours for t in assigned_tasks 
                             if t.work_front == task.work_front)
             
-            # Calcula disponibilidade considerando ausências
-            availability = self._calculate_executor_availability(executor)
-            
             # Pontuação considera balanceamento geral e por frente
             executor_loads[executor] = {
                 'total_hours': total_hours,
                 'front_hours': front_hours,
-                'availability': availability
+                'capacity': current_capacity
             }
         
-        # Escolhe executor com menor carga na frente e maior disponibilidade
+        # Escolhe executor com menor carga na frente e maior capacity
         best_executor = None
         best_score = float('inf')
         
         for executor, load in executor_loads.items():
             # Penaliza mais a carga na mesma frente
-            if load['availability'] <= 0:  # Ignora executores sem disponibilidade
-                continue
-            
-            score = (load['front_hours'] * 2 + load['total_hours']) / load['availability']
+            score = (load['front_hours'] * 2 + load['total_hours']) / load['capacity']
             
             if score < best_score:
                 best_executor = executor
@@ -641,11 +688,29 @@ class SprintScheduler:
             else:
                 dayoff_hours += 3
                 
-        # Calcula total de horas disponíveis na sprint
-        sprint_days = (self.sprint.end_date - self.sprint.start_date).days + 1
-        total_hours = sprint_days * 6
+        # Calcula total de dias úteis na sprint
+        current_date = self.sprint.start_date
+        working_days = 0
         
-        return total_hours - allocated_hours - dayoff_hours
+        while current_date <= self.sprint.end_date:
+            # Verifica se é dia útil (não é fim de semana)
+            if current_date.weekday() < 5:
+                # Verifica se não é um dayoff
+                is_dayoff = False
+                for dayoff in executor_dayoffs:
+                    if dayoff.date.date() == current_date.date():
+                        is_dayoff = True
+                        break
+                
+                if not is_dayoff:
+                    working_days += 1
+            
+            current_date += timedelta(days=1)
+        
+        # Calcula total de horas disponíveis (6 horas por dia útil)
+        total_hours = working_days * 6
+        
+        return total_hours - allocated_hours
 
     def _get_earliest_start_date(self, task: Task) -> Optional[datetime]:
         """
@@ -796,6 +861,11 @@ class SprintScheduler:
         real_end_date = None
 
         while remaining_hours > 0:
+            # Verifica se a data atual já passou do fim da sprint
+            if current_date.date() > self.sprint.end_date.date():
+                logger.error(f"Task {task.id} não pode ser agendada pois ultrapassa a data de finalização da sprint ({self.sprint.end_date.date()})")
+                return None
+                
             current_time = current_date.time()
             
             # Determina em qual período estamos e quantas horas disponíveis
@@ -855,6 +925,10 @@ class SprintScheduler:
                 # Ajusta para o fim do período se necessário
                 if real_end_date.time() > period_end:
                     real_end_date = self._create_datetime(real_end_date, period_end.hour)
+                # Verifica se a data de término não ultrapassa o fim da sprint
+                if real_end_date.date() > self.sprint.end_date.date():
+                    logger.error(f"Task {task.id} não pode ser agendada pois ultrapassa a data de finalização da sprint ({self.sprint.end_date.date()})")
+                    return None
                 return real_end_date
             else:
                 # Consome todo o período e avança
@@ -944,11 +1018,11 @@ class SprintScheduler:
             logger.error(f"Não foi possível encontrar executor para task QA {task.id}")
             return False
         
-        # Verifica se o executor tem capacidade suficiente
-        executor_availability = self._calculate_executor_availability(task.assignee)
-        if executor_availability < task.estimated_hours:
-            logger.warning(f"Executor {task.assignee} não tem capacidade suficiente para task QA {task.id}. "
-                         f"Disponível: {executor_availability:.1f}h, Necessário: {task.estimated_hours:.1f}h")
+        # Verifica se o executor tem capacity suficiente
+        current_capacity = self._get_executor_current_capacity(task.assignee)
+        if current_capacity < task.estimated_hours:
+            logger.warning(f"Executor {task.assignee} não tem capacity suficiente para task QA {task.id}. "
+                         f"Disponível: {current_capacity:.1f}h, Necessário: {task.estimated_hours:.1f}h")
             return False
         
         # Determina se é task de backend ou frontend baseado no título
@@ -1009,9 +1083,12 @@ class SprintScheduler:
         task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
+        # Atualiza a capacity do executor
+        self._update_executor_capacity(task.assignee, task.estimated_hours)
+        
         logger.info(f"Task QA {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
         logger.info(f"Task QA {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
-        logger.info(f"Task QA {task.id} - Capacidade do executor {task.assignee} após agendamento: {executor_availability - task.estimated_hours:.1f}h")
+        logger.info(f"Task QA {task.id} - Capacidade do executor {task.assignee} após agendamento: {self._get_executor_current_capacity(task.assignee):.1f}h")
         return True
 
     def _convert_to_azure_time(self, date: datetime) -> datetime:
