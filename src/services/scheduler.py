@@ -339,28 +339,6 @@ class SprintScheduler:
         else:
             us.story_points = 55
         
-        # Registra tasks não agendadas
-        not_scheduled_tasks = [t for t in active_tasks if t.status != TaskStatus.SCHEDULED]
-        if not_scheduled_tasks:
-            for task in not_scheduled_tasks:
-                # Primeiro verifica se a task ultrapassa a data de finalização da sprint
-                if task.end_date and task.end_date.date() > self.sprint.end_date.date():
-                    reason = "data de término após fim da sprint"
-                # Depois verifica se tem executor atribuído
-                elif not task.assignee:
-                    reason = "sem executor disponível"
-                # Por fim, se tem executor mas não foi agendada, é por falta de capacity
-                else:
-                    reason = "falta de capacity"
-                    
-                logger.warning(f"Task {task.id} da US {us.id} não foi agendada: {reason}")
-                self.metrics.add_not_scheduled_task(
-                    task_id=task.id,
-                    title=task.title,
-                    reason=reason,
-                    user_story_id=us.id
-                )
-        
         logger.info(f"User Story {us.id} atualizada: "
                     f"responsável={us.assignee}, início={us.start_date}, fim={us.end_date}, "
                     f"SP={us.story_points}, horas_totais={total_estimated_hours}")
@@ -413,12 +391,24 @@ class SprintScheduler:
             
         if not task.assignee:
             logger.error(f"Não foi possível encontrar executor para task {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem executor disponível",
+                user_story_id=task.parent_user_story_id
+            )
             return False
         
         # Verifica se todas as dependências estão agendadas
         if not self._check_dependencies(task):
             logger.info(f"Task {task.id} aguardando agendamento de dependências")
             task.status = TaskStatus.BLOCKED
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="aguardando agendamento de dependências",
+                user_story_id=task.parent_user_story_id
+            )
             return False
             
         # Verifica se o executor tem capacity suficiente
@@ -426,6 +416,12 @@ class SprintScheduler:
         if current_capacity < task.estimated_hours:
             logger.warning(f"Executor {task.assignee} não tem capacity suficiente para task {task.id}. "
                          f"Disponível: {current_capacity:.1f}h, Necessário: {task.estimated_hours:.1f}h")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="falta de capacity",
+                user_story_id=task.parent_user_story_id
+            )
             return False
             
         # Calcula datas de início e fim usando o executor atribuído
@@ -433,12 +429,24 @@ class SprintScheduler:
         
         if not start_date:
             logger.error(f"Não foi possível calcular data de início para task {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem data de início disponível",
+                user_story_id=task.parent_user_story_id
+            )
             return False
         
         end_date = self._calculate_end_date(task, start_date)
         
         if not end_date:
             logger.error(f"Não foi possível calcular data de fim para task {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem data de fim disponível",
+                user_story_id=task.parent_user_story_id
+            )
             return False
             
         # Armazena a data real de término e a data para o Azure DevOps
@@ -476,6 +484,12 @@ class SprintScheduler:
         
         if not task.assignee:
             logger.error(f"Não foi possível encontrar executor para task DevOps {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem executor disponível",
+                user_story_id=us.id
+            )
             return False
         
         # Pega todas as tasks agendadas da US
@@ -504,12 +518,24 @@ class SprintScheduler:
             start_date = self._get_earliest_start_date(task)
             if not start_date:
                 logger.error(f"Não foi possível calcular data de início para task DevOps {task.id}")
+                self.metrics.add_not_scheduled_task(
+                    task_id=task.id,
+                    title=task.title,
+                    reason="sem data de início disponível",
+                    user_story_id=us.id
+                )
                 return False
         
         # Calcula data de término
         end_date = self._calculate_end_date(task, start_date)
         if not end_date:
             logger.error(f"Não foi possível calcular data de fim para task DevOps {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem data de fim disponível",
+                user_story_id=us.id
+            )
             return False
             
         # Armazena a data real de término e a data para o Azure DevOps
@@ -552,6 +578,12 @@ class SprintScheduler:
         
         if not task.assignee:
             logger.error(f"Não foi possível encontrar executor para task QA Plano {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem executor disponível",
+                user_story_id=us.id
+            )
             return False
         
         # Se a task não tem estimativa, apenas atribui o executor e marca como agendada
@@ -578,12 +610,24 @@ class SprintScheduler:
             start_date = self._get_earliest_start_date(task)
             if not start_date:
                 logger.error(f"Não foi possível calcular data de início para task QA Plano {task.id}")
+                self.metrics.add_not_scheduled_task(
+                    task_id=task.id,
+                    title=task.title,
+                    reason="sem data de início disponível",
+                    user_story_id=us.id
+                )
                 return False
         
         # Calcula data de término
         end_date = self._calculate_end_date(task, start_date)
         if not end_date:
             logger.error(f"Não foi possível calcular data de fim para task QA Plano {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem data de fim disponível",
+                user_story_id=us.id
+            )
             return False
             
         # Armazena a data real de término e a data para o Azure DevOps
@@ -1041,6 +1085,12 @@ class SprintScheduler:
         
         if not task.assignee:
             logger.error(f"Não foi possível encontrar executor para task QA {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem executor disponível",
+                user_story_id=us.id
+            )
             return False
         
         # Verifica se o executor tem capacity suficiente
@@ -1048,6 +1098,12 @@ class SprintScheduler:
         if current_capacity < task.estimated_hours:
             logger.warning(f"Executor {task.assignee} não tem capacity suficiente para task QA {task.id}. "
                          f"Disponível: {current_capacity:.1f}h, Necessário: {task.estimated_hours:.1f}h")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="falta de capacity",
+                user_story_id=us.id
+            )
             return False
         
         # Determina se é task de backend ou frontend baseado no título
@@ -1094,12 +1150,24 @@ class SprintScheduler:
             start_date = self._get_earliest_start_date(task)
             if not start_date:
                 logger.error(f"Não foi possível calcular data de início para task QA {task.id}")
+                self.metrics.add_not_scheduled_task(
+                    task_id=task.id,
+                    title=task.title,
+                    reason="sem data de início disponível",
+                    user_story_id=us.id
+                )
                 return False
         
         # Calcula data de término
         end_date = self._calculate_end_date(task, start_date)
         if not end_date:
             logger.error(f"Não foi possível calcular data de fim para task QA {task.id}")
+            self.metrics.add_not_scheduled_task(
+                task_id=task.id,
+                title=task.title,
+                reason="sem data de fim disponível",
+                user_story_id=us.id
+            )
             return False
             
         # Armazena a data real de término e a data para o Azure DevOps
@@ -1157,4 +1225,5 @@ class SprintScheduler:
             return new_date.replace(hour=12, minute=0)
         # Se está depois das 17:00, converte para 17:00
         else:
+            return new_date.replace(hour=17, minute=0) 
             return new_date.replace(hour=17, minute=0) 
