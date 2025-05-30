@@ -47,7 +47,7 @@ class ReportGenerator:
             parent=self.styles['Title'],
             fontSize=16,
             spaceAfter=30,
-            textColor=colors.HexColor('#2c3e50'),
+            textColor=colors.HexColor('#FF6B00'),  # Laranja
             alignment=TA_CENTER
         ))
         
@@ -57,7 +57,7 @@ class ReportGenerator:
             parent=self.styles['Heading1'],
             fontSize=14,
             spaceAfter=12,
-            textColor=colors.HexColor('#2c3e50'),
+            textColor=colors.HexColor('#FF6B00'),  # Laranja
             alignment=TA_LEFT
         ))
         
@@ -67,7 +67,7 @@ class ReportGenerator:
             parent=self.styles['Heading2'],
             fontSize=12,
             spaceAfter=6,
-            textColor=colors.HexColor('#34495e'),
+            textColor=colors.HexColor('#FF8533'),  # Laranja mais claro
             alignment=TA_LEFT
         ))
         
@@ -100,11 +100,11 @@ class ReportGenerator:
             fontName='Helvetica-Bold'
         ))
 
-    def _create_table_style(self, header_bg_color=colors.lightgrey):
+    def _create_table_style(self, header_bg_color=colors.HexColor('#FF6B00')):  # Laranja
         """Cria um estilo padrão para as tabelas"""
         return TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), header_bg_color),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
@@ -116,6 +116,7 @@ class ReportGenerator:
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ('WORDWRAP', (0, 0), (-1, -1), True),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#FFF5EB')]),  # Branco e laranja muito claro
         ])
 
     def _count_working_days(self, start_date: datetime, end_date: datetime) -> int:
@@ -169,28 +170,9 @@ class ReportGenerator:
         
         report.append("")
         
-        # 3. Ausências
-        report.append("## 3. Ausências")
-        report.append("")
-        report.append("| Responsável | Datas de Ausência |")
-        report.append("|-------------|-------------------|")
-        
-        for executor, dayoffs in self.dayoffs.items():
-            absences = []
-            for dayoff in dayoffs:
-                period = {
-                    "full": "dia inteiro",
-                    "morning": "manhã",
-                    "afternoon": "tarde"
-                }
-                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
-            report.append(f"| {executor} | {', '.join(absences)} |")
-        
-        report.append("")
-        
-        # 4. Tasks não planejadas
+        # 3. Tasks não planejadas
         if self.metrics.not_scheduled_tasks:
-            report.append("## 4. Tasks não planejadas")
+            report.append("## 3. Tasks não planejadas")
             report.append("")
             report.append("| ID | Título | User Story | Motivo |")
             report.append("|----|--------|------------|--------|")
@@ -201,18 +183,33 @@ class ReportGenerator:
                 )
             report.append("")
             
-        # 5. Capacity dos Executores
-        report.append("## 5. Capacity dos Executores")
+        # 4. Capacity dos Executores
+        report.append("## 4. Capacity dos Executores")
         report.append("")
-        report.append("| Executor | Capacity Total | Capacity Utilizada | Capacity Disponível |")
-        report.append("|----------|----------------|-------------------|---------------------|")
+        report.append("| Executor | Capacity Total | Capacity Utilizada | Capacity Disponível | Datas de Ausência |")
+        report.append("|----------|----------------|-------------------|---------------------|-------------------|")
         
         for executor in sorted(self.metrics.total_capacity.keys()):
             total = self.metrics.total_capacity.get(executor, 0)
             used = self.metrics.used_capacity.get(executor, 0)
             available = self.metrics.available_capacity.get(executor, 0)
+            
+            # Obtém as ausências do executor
+            absences = []
+            # Tenta encontrar as ausências ignorando case
+            executor_dayoffs = next((dayoffs for name, dayoffs in self.dayoffs.items() 
+                                  if name.lower() == executor.lower()), [])
+            
+            for dayoff in executor_dayoffs:
+                period = {
+                    "full": "dia inteiro",
+                    "morning": "manhã",
+                    "afternoon": "tarde"
+                }
+                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
+            
             report.append(
-                f"| {executor} | {total:.1f}h | {used:.1f}h | {available:.1f}h |"
+                f"| {executor} | {total:.1f}h | {used:.1f}h | {available:.1f}h | {', '.join(absences) or '-'} |"
             )
         
         report.append("")
@@ -291,43 +288,9 @@ class ReportGenerator:
         elements.append(KeepTogether(us_table))
         elements.append(Spacer(1, 12))
         
-        # 3. Ausências
-        elements.append(Paragraph("3. Ausências", self.styles['CustomHeading1']))
-        
-        dayoff_data = [[
-            Paragraph('Responsável', self.styles['TableHeader']),
-            Paragraph('Datas de Ausência', self.styles['TableHeader'])
-        ]]
-        
-        for executor, dayoffs in self.dayoffs.items():
-            absences = []
-            for dayoff in dayoffs:
-                period = {
-                    "full": "dia inteiro",
-                    "morning": "manhã",
-                    "afternoon": "tarde"
-                }
-                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
-            
-            dayoff_data.append([
-                Paragraph(executor, self.styles['TableCell']),
-                Paragraph(', '.join(absences), self.styles['TableCell'])
-            ])
-        
-        dayoff_table = LongTable(
-            dayoff_data,
-            colWidths=[
-                available_width * 0.3,  # Responsável
-                available_width * 0.7   # Datas
-            ]
-        )
-        dayoff_table.setStyle(self._create_table_style())
-        elements.append(KeepTogether(dayoff_table))
-        elements.append(Spacer(1, 12))
-        
-        # 4. Tasks não planejadas
+        # 3. Tasks não planejadas
         if self.metrics.not_scheduled_tasks:
-            elements.append(Paragraph("4. Tasks não planejadas", self.styles['CustomHeading1']))
+            elements.append(Paragraph("3. Tasks não planejadas", self.styles['CustomHeading1']))
             
             not_scheduled_data = [[
                 Paragraph('ID', self.styles['TableHeader']),
@@ -338,68 +301,74 @@ class ReportGenerator:
             
             for task in self.metrics.not_scheduled_tasks:
                 not_scheduled_data.append([
-                    Paragraph(task['task_id'], self.styles['NormalWrap']),
-                    Paragraph(task['title'], self.styles['NormalWrap']),
-                    Paragraph(task['user_story_id'], self.styles['NormalWrap']),
-                    Paragraph(task['reason'], self.styles['NormalWrap'])
+                    Paragraph(task['task_id'], self.styles['TableCell']),
+                    Paragraph(task['title'], self.styles['TableCell']),
+                    Paragraph(task['user_story_id'], self.styles['TableCell']),
+                    Paragraph(task['reason'], self.styles['TableCell'])
                 ])
             
-            not_scheduled_table = Table(not_scheduled_data, colWidths=[2*cm, 6*cm, 2*cm, 4*cm])
-            not_scheduled_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
+            not_scheduled_table = LongTable(
+                not_scheduled_data,
+                colWidths=[
+                    available_width * 0.1,  # ID
+                    available_width * 0.4,  # Título
+                    available_width * 0.2,  # User Story
+                    available_width * 0.3   # Motivo
+                ]
+            )
+            not_scheduled_table.setStyle(self._create_table_style())
             elements.append(KeepTogether(not_scheduled_table))
             elements.append(Spacer(1, 12))
             
-        # 5. Capacity dos Executores
-        elements.append(Paragraph("5. Capacity dos Executores", self.styles['CustomHeading1']))
+        # 4. Capacity dos Executores
+        elements.append(Paragraph("4. Capacity dos Executores", self.styles['CustomHeading1']))
         
         capacity_data = [[
             Paragraph('Executor', self.styles['TableHeader']),
             Paragraph('Capacity Total', self.styles['TableHeader']),
             Paragraph('Capacity Utilizada', self.styles['TableHeader']),
-            Paragraph('Capacity Disponível', self.styles['TableHeader'])
+            Paragraph('Capacity Disponível', self.styles['TableHeader']),
+            Paragraph('Datas de Ausência', self.styles['TableHeader'])
         ]]
         
         for executor in sorted(self.metrics.total_capacity.keys()):
             total = self.metrics.total_capacity.get(executor, 0)
             used = self.metrics.used_capacity.get(executor, 0)
             available = self.metrics.available_capacity.get(executor, 0)
+            
+            # Obtém as ausências do executor
+            absences = []
+            # Tenta encontrar as ausências ignorando case
+            executor_dayoffs = next((dayoffs for name, dayoffs in self.dayoffs.items() 
+                                  if name.lower() == executor.lower()), [])
+            
+            for dayoff in executor_dayoffs:
+                period = {
+                    "full": "dia inteiro",
+                    "morning": "manhã",
+                    "afternoon": "tarde"
+                }
+                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
+            
             capacity_data.append([
                 Paragraph(executor, self.styles['TableCell']),
                 Paragraph(f"{total:.1f}h", self.styles['TableCell']),
                 Paragraph(f"{used:.1f}h", self.styles['TableCell']),
-                Paragraph(f"{available:.1f}h", self.styles['TableCell'])
+                Paragraph(f"{available:.1f}h", self.styles['TableCell']),
+                Paragraph(', '.join(absences) or '-', self.styles['TableCell'])
             ])
         
-        capacity_table = Table(capacity_data, colWidths=[4*cm, 3*cm, 3*cm, 3*cm])
-        capacity_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
+        capacity_table = LongTable(
+            capacity_data,
+            colWidths=[
+                available_width * 0.25,  # Executor
+                available_width * 0.15,  # Capacity Total
+                available_width * 0.15,  # Capacity Utilizada
+                available_width * 0.15,  # Capacity Disponível
+                available_width * 0.3    # Datas de Ausência
+            ]
+        )
+        capacity_table.setStyle(self._create_table_style())
         elements.append(KeepTogether(capacity_table))
         elements.append(Spacer(1, 12))
         
