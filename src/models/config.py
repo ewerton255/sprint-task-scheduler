@@ -32,12 +32,27 @@ class DayOff(BaseModel):
     date: datetime
     period: str = Field(..., pattern="^(full|morning|afternoon)$")
 
+class Executor(BaseModel):
+    """Modelo para executor"""
+    email: str
+    capacity: int
+
+    def __hash__(self) -> int:
+        """Retorna o hash do executor baseado no email em lowercase"""
+        return hash(self.email.lower())
+
+    def __eq__(self, other: object) -> bool:
+        """Compara dois executores baseado no email em lowercase"""
+        if not isinstance(other, Executor):
+            return NotImplemented
+        return self.email.lower() == other.email.lower()
+
 class ExecutorsConfig(BaseModel):
     """Configuração dos executores por frente"""
-    backend: List[str]
-    frontend: List[str]
-    qa: List[str]
-    devops: List[str]
+    backend: List[Executor]
+    frontend: List[Executor]
+    qa: List[Executor]
+    devops: List[Executor]
 
 class DependenciesConfig(BaseModel):
     """Configuração de dependências entre tasks"""

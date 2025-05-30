@@ -2,7 +2,7 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
 from ..models.entities import Task, UserStory, Sprint, WorkFront, TaskStatus, SprintMetrics
-from ..models.config import DayOff, ExecutorsConfig
+from ..models.config import DayOff, ExecutorsConfig, Executor
 
 class SprintScheduler:
     """Serviço responsável pelo agendamento de tasks na sprint"""
@@ -49,9 +49,9 @@ class SprintScheduler:
         # Inicializa a capacity de cada executor
         for executor in all_executors:
             total_capacity = self._calculate_executor_availability(executor)
-            self.executor_capacity[executor.lower()] = total_capacity
-            self.metrics.update_capacity(executor, total_capacity, 0)
-            logger.info(f"Capacity inicial do executor {executor}: {total_capacity:.1f}h")
+            self.executor_capacity[executor.email.lower()] = total_capacity
+            self.metrics.update_capacity(executor.email, total_capacity, 0)
+            logger.info(f"Capacity inicial do executor {executor.email}: {total_capacity:.1f}h")
 
     def _update_executor_capacity(self, executor: str, hours: float) -> None:
         """
@@ -699,12 +699,12 @@ class SprintScheduler:
         executor_loads = {}
         for executor in executors_list:
             # Verifica se o executor tem capacity suficiente
-            current_capacity = self._get_executor_current_capacity(executor)
+            current_capacity = self._get_executor_current_capacity(executor.email)
             if current_capacity < task.estimated_hours:
                 continue
                 
             # Considera apenas tasks agendadas e ativas
-            assigned_tasks = [t for t in self.sprint.get_tasks_by_assignee(executor) 
+            assigned_tasks = [t for t in self.sprint.get_tasks_by_assignee(executor.email) 
                             if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
             
             # Calcula horas totais e horas na mesma frente
@@ -713,7 +713,7 @@ class SprintScheduler:
                             if t.work_front == task.work_front)
             
             # Pontuação considera balanceamento geral e por frente
-            executor_loads[executor] = {
+            executor_loads[executor.email] = {
                 'total_hours': total_hours,
                 'front_hours': front_hours,
                 'capacity': current_capacity
@@ -733,24 +733,24 @@ class SprintScheduler:
         
         return best_executor
 
-    def _calculate_executor_availability(self, executor: str) -> float:
+    def _calculate_executor_availability(self, executor: Executor) -> float:
         """
         Calcula a disponibilidade de um executor em horas
         
         Args:
-            executor: Email do executor
+            executor: Executor
             
         Returns:
             float: Horas disponíveis
         """
         # Calcula total de horas já alocadas (apenas de tasks ativas)
-        assigned_tasks = self.sprint.get_tasks_by_assignee(executor)
+        assigned_tasks = self.sprint.get_tasks_by_assignee(executor.email)
         allocated_hours = sum(t.estimated_hours for t in assigned_tasks 
                              if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED])
         
         # Calcula total de horas de ausência (usando email em lowercase)
         dayoff_hours = 0
-        executor_dayoffs = self.dayoffs.get(executor.lower(), [])
+        executor_dayoffs = self.dayoffs.get(executor.email.lower(), [])
         for dayoff in executor_dayoffs:
             if dayoff.period == "full":
                 dayoff_hours += 6
@@ -769,7 +769,7 @@ class SprintScheduler:
             current_date += timedelta(days=1)
         
         # Calcula total de horas disponíveis (6 horas por dia útil)
-        total_hours = working_days * 6
+        total_hours = working_days * executor.capacity
         
         # Subtrai as horas já alocadas e as horas de ausência
         return total_hours - allocated_hours - dayoff_hours

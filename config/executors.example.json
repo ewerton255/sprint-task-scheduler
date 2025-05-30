@@ -1,18 +1,38 @@
 {
     "backend": [
-        "backend-executor-1@empresa.com",
-        "backend-executor-2@empresa.com"
+        {
+            "name": "backend-executor-1@empresa.com",
+            "capacity": 6
+        },
+        {
+            "name": "backend-executor-2@empresa.com",
+            "capacity": 6
+        }
     ],
     "frontend": [
-        "frontend-executor-1@empresa.com",
-        "frontend-executor-2@empresa.com"
+        {
+            "name": "frontend-executor-1@empresa.com",
+            "capacity": 6
+        },
+        {
+            "name": "frontend-executor-2@empresa.com",
+            "capacity": 6
+        }
     ],
     "qa": [
-        "qa-executor-1@empresa.com",
-        "qa-executor-2@empresa.com"
+        {
+            "name": "qa-executor-1@empresa.com",
+            "capacity": 6
+        },
+        {
+            "name": "qa-executor-2@empresa.com",
+            "capacity": 6
+        }
     ],
     "devops": [
-        "devops-executor-1@empresa.com",
-        "devops-executor-2@empresa.com"
+        {
+            "name": "devops-executor-1@empresa.com",
+            "capacity": 3
+        }
     ]
 }

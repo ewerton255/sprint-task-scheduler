@@ -99,3 +99,6 @@ reports/
 
 # Environment variables
 .env 
+
+# Cursor
+.cursor/
