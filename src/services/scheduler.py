@@ -1,7 +1,7 @@
 from datetime import datetime, time, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
-from ..models.entities import Task, UserStory, Sprint, WorkFront, TaskStatus
+from ..models.entities import Task, UserStory, Sprint, WorkFront, TaskStatus, SprintMetrics
 from ..models.config import DayOff, ExecutorsConfig
 
 class SprintScheduler:
@@ -30,6 +30,9 @@ class SprintScheduler:
         self.afternoon_start = time(14, 0)
         self.afternoon_end = time(17, 0)
         
+        # Usa o objeto SprintMetrics existente na Sprint
+        self.metrics = sprint.metrics
+        
         # Inicializa o dicionário de capacity atual dos executores
         self._initialize_executor_capacity()
 
@@ -45,8 +48,10 @@ class SprintScheduler:
         
         # Inicializa a capacity de cada executor
         for executor in all_executors:
-            self.executor_capacity[executor.lower()] = self._calculate_executor_availability(executor)
-            logger.info(f"Capacity inicial do executor {executor}: {self.executor_capacity[executor.lower()]:.1f}h")
+            total_capacity = self._calculate_executor_availability(executor)
+            self.executor_capacity[executor.lower()] = total_capacity
+            self.metrics.update_capacity(executor, total_capacity, 0)
+            logger.info(f"Capacity inicial do executor {executor}: {total_capacity:.1f}h")
 
     def _update_executor_capacity(self, executor: str, hours: float) -> None:
         """
@@ -59,6 +64,9 @@ class SprintScheduler:
         executor_key = executor.lower()
         if executor_key in self.executor_capacity:
             self.executor_capacity[executor_key] -= hours
+            total = self.metrics.total_capacity.get(executor, 0)
+            used = self.metrics.used_capacity.get(executor, 0) + hours
+            self.metrics.update_capacity(executor, total, used)
             logger.info(f"Capacity atualizada do executor {executor}: {self.executor_capacity[executor_key]:.1f}h")
 
     def _get_executor_current_capacity(self, executor: str) -> float:
@@ -335,10 +343,23 @@ class SprintScheduler:
         not_scheduled_tasks = [t for t in active_tasks if t.status != TaskStatus.SCHEDULED]
         if not_scheduled_tasks:
             for task in not_scheduled_tasks:
-                reason = "falta de capacity" if task.assignee else "sem executor disponível"
+                # Primeiro verifica se a task ultrapassa a data de finalização da sprint
                 if task.end_date and task.end_date.date() > self.sprint.end_date.date():
                     reason = "data de término após fim da sprint"
+                # Depois verifica se tem executor atribuído
+                elif not task.assignee:
+                    reason = "sem executor disponível"
+                # Por fim, se tem executor mas não foi agendada, é por falta de capacity
+                else:
+                    reason = "falta de capacity"
+                    
                 logger.warning(f"Task {task.id} da US {us.id} não foi agendada: {reason}")
+                self.metrics.add_not_scheduled_task(
+                    task_id=task.id,
+                    title=task.title,
+                    reason=reason,
+                    user_story_id=us.id
+                )
         
         logger.info(f"User Story {us.id} atualizada: "
                     f"responsável={us.assignee}, início={us.start_date}, fim={us.end_date}, "
@@ -497,7 +518,12 @@ class SprintScheduler:
         task.azure_end_date = self._convert_to_azure_time(end_date)
         task.status = TaskStatus.SCHEDULED
         
+        # Atualiza a capacity do executor
+        self._update_executor_capacity(task.assignee, task.estimated_hours)
+        
         logger.info(f"Task DevOps {task.id} agendada para {task.assignee} de {start_date} até {task.end_date} (Azure: {task.azure_end_date})")
+        logger.info(f"Task DevOps {task.id} - Detalhes das datas: start_date={start_date}, end_date={end_date}, azure_end_date={task.azure_end_date}")
+        logger.info(f"Task DevOps {task.id} - Capacity do executor {task.assignee} após agendamento: {self._get_executor_current_capacity(task.assignee):.1f}h")
         return True
 
     def _schedule_qa_plan_task(self, task: Task, us: UserStory) -> bool:

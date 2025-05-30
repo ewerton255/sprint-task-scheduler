@@ -12,7 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus.flowables import KeepTogether
 
-from ..models.entities import Task, UserStory, Sprint, TaskStatus, WorkFront
+from ..models.entities import Task, UserStory, Sprint, TaskStatus, WorkFront, SprintMetrics
 from ..models.config import DayOff
 
 class ReportGenerator:
@@ -36,6 +36,8 @@ class ReportGenerator:
         self._setup_styles()
         # Extrai o nome do time do caminho completo
         self.team_name = team_name.split('\\')[-1] if '\\' in team_name else team_name
+        # Obtém as métricas da sprint do scheduler
+        self.metrics = sprint.metrics
 
     def _setup_styles(self):
         """Configura estilos personalizados para o relatório"""
@@ -144,82 +146,34 @@ class ReportGenerator:
         report.append(f"# Relatório de Agendamento - Sprint {self.sprint.name}")
         report.append("")
         
-        # Informações da Sprint
-        report.append("## 📅 Informações da Sprint")
+        # 1. Resumo Geral da Sprint
+        report.append("## 1. Resumo Geral da Sprint")
         report.append("")
+        report.append(f"- **Sprint:** {self.sprint.name}")
         report.append(f"- **Início:** {self.sprint.start_date.strftime('%d/%m/%Y')}")
         report.append(f"- **Término:** {self.sprint.end_date.strftime('%d/%m/%Y')}")
+        report.append(f"- **Total de User Stories:** {len(self.sprint.user_stories)}")
         report.append("")
         
-        # Capacidade da Equipe
-        report.append("## 👥 Capacidade da Equipe")
+        # 2. User Stories Planejadas
+        report.append("## 2. User Stories Planejadas")
         report.append("")
-        report.append("| Executor | Capacidade Total (h) | Capacidade Usada (h) | Capacidade Disponível (h) |")
-        report.append("|----------|---------------------|---------------------|--------------------------|")
+        report.append("| ID | Título | Responsável | Data de Finalização | Story Points |")
+        report.append("|----|--------|-------------|---------------------|--------------|")
         
-        # Calcula capacidade total considerando dias úteis
-        total_working_days = self._count_working_days(self.sprint.start_date, self.sprint.end_date)
-        base_capacity = total_working_days * 6  # 6 horas por dia útil
-        
-        # Primeiro, define a capacidade base para todos os executores
-        executor_capacity = {}
         for us in self.sprint.user_stories:
-            for task in us.tasks:
-                if task.assignee and task.assignee not in executor_capacity:
-                    executor_capacity[task.assignee] = {"total": base_capacity, "used": 0}
-        
-        # Depois, subtrai as ausências para executores que têm dayoffs
-        for executor, dayoffs in self.dayoffs.items():
-            if executor in executor_capacity:
-                for dayoff in dayoffs:
-                    if dayoff.period == "full":
-                        executor_capacity[executor]["total"] -= 6  # Subtrai 6 horas para dia inteiro
-                    else:
-                        executor_capacity[executor]["total"] -= 3  # Subtrai 3 horas para meio período
-        
-        # Por fim, calcula a capacidade usada baseada nas tasks
-        for us in self.sprint.user_stories:
-            for task in us.tasks:
-                if task.assignee and task.estimated_hours:
-                    executor_capacity[task.assignee]["used"] += task.estimated_hours
-        
-        # Adiciona informações ao relatório
-        for executor, capacity in executor_capacity.items():
-            available = capacity["total"] - capacity["used"]
+            end_date = us.end_date.strftime('%d/%m/%Y') if us.end_date else '-'
             report.append(
-                f"| {executor} | {capacity['total']:.1f} | {capacity['used']:.1f} | {available:.1f} |"
+                f"| {us.id} | {us.title} | {us.assignee or '-'} | {end_date} | {us.story_points or '-'} |"
             )
         
         report.append("")
         
-        # Distribuição por Frente de Trabalho
-        report.extend([
-            "## 4. Distribuição por Frente de Trabalho\n",
-            "| Frente | Quantidade de Tasks | Horas Estimadas |",
-            "|--------|-------------------|-----------------|"
-        ])
-        
-        work_front_stats = {}
-        for us in self.sprint.user_stories:
-            # Mantém a ordem original das tasks
-            for task in us.tasks:
-                if task.work_front not in work_front_stats:
-                    work_front_stats[task.work_front] = {"count": 0, "hours": 0}
-                work_front_stats[task.work_front]["count"] += 1
-                if task.estimated_hours:
-                    work_front_stats[task.work_front]["hours"] += task.estimated_hours
-        
-        for front, stats in work_front_stats.items():
-            report.append(f"| {front.value} | {stats['count']} | {stats['hours']:.1f} |")
-        
+        # 3. Ausências
+        report.append("## 3. Ausências")
         report.append("")
-        
-        # Ausências
-        report.extend([
-            "## 5. Ausências (Dayoffs)\n",
-            "| Responsável | Datas de Ausência |",
-            "|-------------|-------------------|"
-        ])
+        report.append("| Responsável | Datas de Ausência |")
+        report.append("|-------------|-------------------|")
         
         for executor, dayoffs in self.dayoffs.items():
             absences = []
@@ -228,31 +182,40 @@ class ReportGenerator:
                     "full": "dia inteiro",
                     "morning": "manhã",
                     "afternoon": "tarde"
-                }[dayoff.period]
-                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period})")
-            
+                }
+                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
             report.append(f"| {executor} | {', '.join(absences)} |")
-            
+        
         report.append("")
         
-        # Itens não agendados
-        report.extend([
-            "## 6. Itens não agendados\n",
-            "### Por dependências ausentes:"
-        ])
-        
-        # Mantém a ordem original das tasks bloqueadas
-        blocked_tasks = [t for t in self.sprint.get_all_tasks() if t.status == TaskStatus.BLOCKED]
-        if blocked_tasks:
-            for task in blocked_tasks:
-                report.append(f"- Task {task.id}: {task.title} | Dependências ausentes: {', '.join(task.dependencies)}")
-        else:
-            report.append("*Nenhuma task bloqueada por dependências*")
+        # 4. Tasks não planejadas
+        if self.metrics.not_scheduled_tasks:
+            report.append("## 4. Tasks não planejadas")
+            report.append("")
+            report.append("| ID | Título | User Story | Motivo |")
+            report.append("|----|--------|------------|--------|")
             
-        report.extend([
-            "\n### Por dependências não satisfeitas ou ciclo:",
-            "*Nenhuma task com ciclo de dependências detectado*\n"
-        ])
+            for task in self.metrics.not_scheduled_tasks:
+                report.append(
+                    f"| {task['task_id']} | {task['title']} | {task['user_story_id']} | {task['reason']} |"
+                )
+            report.append("")
+            
+        # 5. Capacity dos Executores
+        report.append("## 5. Capacity dos Executores")
+        report.append("")
+        report.append("| Executor | Capacity Total | Capacity Utilizada | Capacity Disponível |")
+        report.append("|----------|----------------|-------------------|---------------------|")
+        
+        for executor in sorted(self.metrics.total_capacity.keys()):
+            total = self.metrics.total_capacity.get(executor, 0)
+            used = self.metrics.used_capacity.get(executor, 0)
+            available = self.metrics.available_capacity.get(executor, 0)
+            report.append(
+                f"| {executor} | {total:.1f}h | {used:.1f}h | {available:.1f}h |"
+            )
+        
+        report.append("")
         
         return "\n".join(report)
 
@@ -282,7 +245,7 @@ class ReportGenerator:
         elements.append(Paragraph(f"Relatório da Sprint: {self.sprint.name} - {self.team_name}", self.styles['CustomTitle']))
         elements.append(Spacer(1, 12))
         
-        # Resumo Geral
+        # 1. Resumo Geral da Sprint
         elements.append(Paragraph("1. Resumo Geral da Sprint", self.styles['CustomHeading1']))
         elements.append(Paragraph(f"Sprint: {self.sprint.name}", self.styles['NormalWrap']))
         elements.append(Paragraph(
@@ -292,8 +255,8 @@ class ReportGenerator:
         elements.append(Paragraph(f"Total de User Stories planejadas: {len(self.sprint.user_stories)}", self.styles['NormalWrap']))
         elements.append(Spacer(1, 12))
         
-        # User Stories
-        elements.append(Paragraph("2. User Stories planejadas", self.styles['CustomHeading1']))
+        # 2. User Stories Planejadas
+        elements.append(Paragraph("2. User Stories Planejadas", self.styles['CustomHeading1']))
         us_data = [[
             Paragraph('ID', self.styles['TableHeader']),
             Paragraph('Título', self.styles['TableHeader']),
@@ -301,7 +264,7 @@ class ReportGenerator:
             Paragraph('Data de Finalização', self.styles['TableHeader']),
             Paragraph('Story Points', self.styles['TableHeader'])
         ]]
-        # Mantém a ordem original das User Stories
+        
         for us in self.sprint.user_stories:
             end_date = us.end_date.strftime('%d/%m/%Y') if us.end_date else '-'
             us_data.append([
@@ -328,114 +291,14 @@ class ReportGenerator:
         elements.append(KeepTogether(us_table))
         elements.append(Spacer(1, 12))
         
-        # Capacidade dos Executores
-        elements.append(Paragraph("3. Capacidade dos Executores", self.styles['CustomHeading1']))
-        
-        # Calcula capacidade total e usada por executor
-        executor_capacity = {}
-        
-        # Primeiro calcula a capacidade usada baseada nas tasks
-        for us in self.sprint.user_stories:
-            # Mantém a ordem original das tasks
-            for task in us.tasks:
-                if task.assignee:
-                    if task.assignee not in executor_capacity:
-                        executor_capacity[task.assignee] = {"total": 0, "used": 0}
-                    
-                    # Adiciona horas estimadas à capacidade usada
-                    if task.estimated_hours:
-                        executor_capacity[task.assignee]["used"] += task.estimated_hours
-        
-        # Calcula capacidade total considerando dias úteis e ausências
-        total_working_days = self._count_working_days(self.sprint.start_date, self.sprint.end_date)
-        base_capacity = total_working_days * 6  # 6 horas por dia útil
-        
-        # Primeiro, define a capacidade base para todos os executores
-        for executor in executor_capacity.keys():
-            executor_capacity[executor]["total"] = base_capacity
-        
-        # Depois, subtrai as ausências para executores que têm dayoffs
-        for executor, dayoffs in self.dayoffs.items():
-            if executor in executor_capacity:
-                for dayoff in dayoffs:
-                    if dayoff.period == "full":
-                        executor_capacity[executor]["total"] -= 6  # Subtrai 6 horas para dia inteiro
-                    else:
-                        executor_capacity[executor]["total"] -= 3  # Subtrai 3 horas para meio período
-        
-        # Prepara dados da tabela
-        capacity_data = [[
-            Paragraph('Executor', self.styles['TableHeader']),
-            Paragraph('Capacidade Total (h)', self.styles['TableHeader']),
-            Paragraph('Capacidade Usada (h)', self.styles['TableHeader']),
-            Paragraph('Capacidade Disponível (h)', self.styles['TableHeader'])
-        ]]
-        for executor, capacity in executor_capacity.items():
-            available = capacity["total"] - capacity["used"]
-            capacity_data.append([
-                Paragraph(executor, self.styles['TableCell']),
-                f"{capacity['total']:.1f}",
-                f"{capacity['used']:.1f}",
-                f"{available:.1f}"
-            ])
-        
-        capacity_table = LongTable(
-            capacity_data,
-            colWidths=[
-                available_width * 0.3,  # Executor
-                available_width * 0.25, # Total
-                available_width * 0.25, # Usada
-                available_width * 0.2   # Disponível
-            ]
-        )
-        capacity_table.setStyle(self._create_table_style())
-        elements.append(KeepTogether(capacity_table))
-        elements.append(Spacer(1, 12))
-        
-        # Distribuição por Frente de Trabalho
-        elements.append(Paragraph("4. Distribuição por Frente de Trabalho", self.styles['CustomHeading1']))
-        
-        work_front_stats = {}
-        for us in self.sprint.user_stories:
-            # Mantém a ordem original das tasks
-            for task in us.tasks:
-                if task.work_front not in work_front_stats:
-                    work_front_stats[task.work_front] = {"count": 0, "hours": 0}
-                work_front_stats[task.work_front]["count"] += 1
-                if task.estimated_hours:
-                    work_front_stats[task.work_front]["hours"] += task.estimated_hours
-        
-        front_data = [[
-            Paragraph('Frente', self.styles['TableHeader']),
-            Paragraph('Quantidade de Tasks', self.styles['TableHeader']),
-            Paragraph('Horas Estimadas', self.styles['TableHeader'])
-        ]]
-        for front, stats in work_front_stats.items():
-            front_data.append([
-                Paragraph(front.value, self.styles['TableCell']),
-                str(stats['count']),
-                f"{stats['hours']:.1f}"
-            ])
-        
-        front_table = LongTable(
-            front_data,
-            colWidths=[
-                available_width * 0.4,  # Frente
-                available_width * 0.3,  # Quantidade
-                available_width * 0.3   # Horas
-            ]
-        )
-        front_table.setStyle(self._create_table_style())
-        elements.append(KeepTogether(front_table))
-        elements.append(Spacer(1, 12))
-        
-        # Ausências
-        elements.append(Paragraph("5. Ausências (Dayoffs)", self.styles['CustomHeading1']))
+        # 3. Ausências
+        elements.append(Paragraph("3. Ausências", self.styles['CustomHeading1']))
         
         dayoff_data = [[
             Paragraph('Responsável', self.styles['TableHeader']),
             Paragraph('Datas de Ausência', self.styles['TableHeader'])
         ]]
+        
         for executor, dayoffs in self.dayoffs.items():
             absences = []
             for dayoff in dayoffs:
@@ -443,8 +306,8 @@ class ReportGenerator:
                     "full": "dia inteiro",
                     "morning": "manhã",
                     "afternoon": "tarde"
-                }[dayoff.period]
-                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period})")
+                }
+                absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
             
             dayoff_data.append([
                 Paragraph(executor, self.styles['TableCell']),
@@ -462,26 +325,84 @@ class ReportGenerator:
         elements.append(KeepTogether(dayoff_table))
         elements.append(Spacer(1, 12))
         
-        # Itens não agendados
-        elements.append(Paragraph("6. Itens não agendados", self.styles['CustomHeading1']))
-        elements.append(Paragraph("Por dependências ausentes:", self.styles['CustomHeading2']))
+        # 4. Tasks não planejadas
+        if self.metrics.not_scheduled_tasks:
+            elements.append(Paragraph("4. Tasks não planejadas", self.styles['CustomHeading1']))
+            
+            not_scheduled_data = [[
+                Paragraph('ID', self.styles['TableHeader']),
+                Paragraph('Título', self.styles['TableHeader']),
+                Paragraph('User Story', self.styles['TableHeader']),
+                Paragraph('Motivo', self.styles['TableHeader'])
+            ]]
+            
+            for task in self.metrics.not_scheduled_tasks:
+                not_scheduled_data.append([
+                    Paragraph(task['task_id'], self.styles['NormalWrap']),
+                    Paragraph(task['title'], self.styles['NormalWrap']),
+                    Paragraph(task['user_story_id'], self.styles['NormalWrap']),
+                    Paragraph(task['reason'], self.styles['NormalWrap'])
+                ])
+            
+            not_scheduled_table = Table(not_scheduled_data, colWidths=[2*cm, 6*cm, 2*cm, 4*cm])
+            not_scheduled_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(KeepTogether(not_scheduled_table))
+            elements.append(Spacer(1, 12))
+            
+        # 5. Capacity dos Executores
+        elements.append(Paragraph("5. Capacity dos Executores", self.styles['CustomHeading1']))
         
-        # Mantém a ordem original das tasks bloqueadas
-        blocked_tasks = [t for t in self.sprint.get_all_tasks() if t.status == TaskStatus.BLOCKED]
-        if blocked_tasks:
-            for task in blocked_tasks:
-                elements.append(Paragraph(
-                    f"• Task {task.id}: {task.title} | Dependências ausentes: {', '.join(task.dependencies)}",
-                    self.styles['NormalWrap']
-                ))
-        else:
-            elements.append(Paragraph("Nenhuma task bloqueada por dependências", self.styles['NormalWrap']))
+        capacity_data = [[
+            Paragraph('Executor', self.styles['TableHeader']),
+            Paragraph('Capacity Total', self.styles['TableHeader']),
+            Paragraph('Capacity Utilizada', self.styles['TableHeader']),
+            Paragraph('Capacity Disponível', self.styles['TableHeader'])
+        ]]
         
+        for executor in sorted(self.metrics.total_capacity.keys()):
+            total = self.metrics.total_capacity.get(executor, 0)
+            used = self.metrics.used_capacity.get(executor, 0)
+            available = self.metrics.available_capacity.get(executor, 0)
+            capacity_data.append([
+                Paragraph(executor, self.styles['TableCell']),
+                Paragraph(f"{total:.1f}h", self.styles['TableCell']),
+                Paragraph(f"{used:.1f}h", self.styles['TableCell']),
+                Paragraph(f"{available:.1f}h", self.styles['TableCell'])
+            ])
+        
+        capacity_table = Table(capacity_data, colWidths=[4*cm, 3*cm, 3*cm, 3*cm])
+        capacity_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(KeepTogether(capacity_table))
         elements.append(Spacer(1, 12))
-        elements.append(Paragraph("Por dependências não satisfeitas ou ciclo:", self.styles['CustomHeading2']))
-        elements.append(Paragraph("Nenhuma task com ciclo de dependências detectado", self.styles['NormalWrap']))
         
         # Gera o PDF
         doc.build(elements)
-        
         logger.info(f"Relatório PDF gerado em {pdf_path}") 

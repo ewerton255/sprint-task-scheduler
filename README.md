@@ -7,7 +7,7 @@
 [![Python Dateutil](https://img.shields.io/badge/dateutil-2.8.2-yellow)](https://github.com/dateutil/dateutil)
 [![Typer](https://img.shields.io/badge/typer-0.9.0-green)](https://typer.tiangolo.com/)
 
-Um sistema inteligente de agendamento de tarefas para sprints que considera múltiplas frentes de trabalho, ausências e dependências entre tarefas.
+Sistema de agendamento inteligente de tasks para sprints, com geração de relatórios detalhados.
 
 ## 📋 Índice
 
@@ -29,13 +29,12 @@ O Sprint Task Scheduler é uma ferramenta desenvolvida para otimizar o agendamen
 
 ## ✨ Funcionalidades
 
-- **Agendamento Inteligente**: Distribui tarefas considerando a disponibilidade dos executores
-- **Múltiplas Frentes**: Suporte para Backend, Frontend, QA e DevOps
-- **Gestão de Ausências**: Considera ausências parciais (manhã/tarde) e totais
-- **Dependências**: Respeita dependências entre tarefas
-- **Períodos de Trabalho**: Considera horários específicos (9h-12h e 14h-17h)
-- **Integração Azure DevOps**: Compatível com datas do Azure DevOps
-- **Story Points**: Cálculo automático baseado em horas estimadas
+- Agendamento automático de tasks considerando dependências e capacidade dos executores
+- Gerenciamento de user stories com cálculo de story points
+- Geração de relatórios em Markdown e PDF
+- Controle de ausências (dayoffs) dos executores
+- Métricas globais da sprint (capacidade total, usada e disponível)
+- Relatório de tasks não agendadas com motivos
 
 ## 📋 Requisitos
 
@@ -240,43 +239,44 @@ python src/main.py
 
 ## 📜 Regras de Negócio
 
-### Períodos de Trabalho
-- **Manhã**: 9:00 às 12:00
-- **Tarde**: 14:00 às 17:00
-- Fins de semana são desconsiderados automaticamente
+### Capacidade
 
-### Ausências
-- **Dia Inteiro**: Executor indisponível o dia todo
-- **Manhã**: Indisponível das 9:00 às 12:00
-- **Tarde**: Indisponível das 14:00 às 17:00
+- Cada executor tem uma capacidade base de 6 horas por dia útil
+- Ausências (dayoffs) reduzem a capacidade proporcionalmente:
+  - Dia inteiro: -6 horas
+  - Meio período: -3 horas
+- A capacidade é calculada considerando apenas dias úteis (segunda a sexta)
 
-### Story Points
-Conversão automática de horas estimadas para story points:
-- ≤ 1 hora: 0.5 SP
-- ≤ 2 horas: 1 SP
-- ≤ 3 horas: 2 SP
-- ≤ 5 horas: 3 SP
-- ≤ 9 horas: 5 SP
-- ≤ 14 horas: 8 SP
-- ≤ 23 horas: 13 SP
-- ≤ 37 horas: 21 SP
-- ≤ 60 horas: 34 SP
-- \> 60 horas: 55 SP
+### User Stories
 
-### Priorização de Tasks
-1. Tasks regulares (não-QA, não-DevOps)
-2. Tasks de QA (exceto plano de testes)
-3. Tasks de DevOps
-4. Tasks de QA Plano de Testes
+- O responsável é definido como o executor da task com mais horas estimadas
+- As datas de início e fim são baseadas nas tasks agendadas
+- Os story points são calculados com base nas horas estimadas das tasks agendadas:
+  - 0-4 horas: 1 ponto
+  - 5-8 horas: 2 pontos
+  - 9-16 horas: 3 pontos
+  - 17-24 horas: 5 pontos
+  - 25-40 horas: 8 pontos
+  - >40 horas: 13 pontos
 
-### Atribuição de Executores
-- Mantém mesmo executor por frente na User Story
-- Balanceia carga de trabalho entre executores
-- Considera disponibilidade e ausências
+### Tasks
+
+- Tasks de QA (test plan) são agendadas primeiro
+- Tasks sem executor definido não são agendadas
+- Tasks com data de término além do fim da sprint não são agendadas
+- Tasks sem capacidade disponível não são agendadas
+- Tasks não agendadas são reportadas com seus motivos
 
 ### Dependências
-- Tasks dependentes só são agendadas após conclusão das dependências
-- Dependências circulares são identificadas e reportadas
+
+- Tasks com dependências não satisfeitas não são agendadas
+- Ciclos de dependências são detectados e reportados
+
+### Priorização
+
+- Tasks são agendadas na ordem:
+  1. Tasks de QA (test plan)
+  2. Tasks normais
 
 ## 📁 Estrutura do Projeto
 
