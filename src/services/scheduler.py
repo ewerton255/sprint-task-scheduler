@@ -764,22 +764,15 @@ class SprintScheduler:
         while current_date <= self.sprint.end_date:
             # Verifica se é dia útil (não é fim de semana)
             if current_date.weekday() < 5:
-                # Verifica se não é um dayoff
-                is_dayoff = False
-                for dayoff in executor_dayoffs:
-                    if dayoff.date.date() == current_date.date():
-                        is_dayoff = True
-                        break
-                
-                if not is_dayoff:
-                    working_days += 1
+                working_days += 1
             
             current_date += timedelta(days=1)
         
         # Calcula total de horas disponíveis (6 horas por dia útil)
         total_hours = working_days * 6
         
-        return total_hours - allocated_hours
+        # Subtrai as horas já alocadas e as horas de ausência
+        return total_hours - allocated_hours - dayoff_hours
 
     def _get_earliest_start_date(self, task: Task) -> Optional[datetime]:
         """
