@@ -304,25 +304,25 @@ def test_get_best_executor():
         team="Team 1",
         user_stories=[
             UserStory(
-                id="US-1",
+        id="US-1",
                 title="User Story 1",
-                description="Test user story",
-                assignee=None,
-                start_date=None,
-                end_date=None,
+        description="Test user story",
+        assignee=None,
+        start_date=None,
+        end_date=None,
                 story_points=5.0,
                 tasks=[
                     Task(
                         id="T1",
                         title="Task 1",
-                        description="Test task",
-                        work_front=WorkFront.BACKEND,
+        description="Test task",
+        work_front=WorkFront.BACKEND,
                         estimated_hours=8.0,
                         assignee="test@example.com",
-                        start_date=None,
-                        end_date=None,
-                        azure_end_date=None,
-                        parent_user_story_id="US-1"
+        start_date=None,
+        end_date=None,
+        azure_end_date=None,
+        parent_user_story_id="US-1"
                     )
                 ]
             )
@@ -1037,3 +1037,398 @@ def test_schedule_task_with_invalid_hours():
     # Agenda task
     success = scheduler._schedule_task(task)
     assert success  # Deve permitir o agendamento mesmo com horas inválidas 
+
+def test_adjust_time_to_period_end(scheduler):
+    """Testa o ajuste de horário para o fim do período"""
+    # Testa período da manhã
+    morning_date = datetime(2024, 3, 18, 10, 30, tzinfo=timezone(timedelta(hours=-3)))
+    adjusted = scheduler._adjust_time_to_period_end(morning_date)
+    assert adjusted.hour == 12
+    assert adjusted.minute == 0
+    
+    # Testa período da tarde
+    afternoon_date = datetime(2024, 3, 18, 15, 30, tzinfo=timezone(timedelta(hours=-3)))
+    adjusted = scheduler._adjust_time_to_period_end(afternoon_date)
+    assert adjusted.hour == 17
+    assert adjusted.minute == 0
+    
+    # Testa antes do período da manhã
+    early_date = datetime(2024, 3, 18, 8, 30, tzinfo=timezone(timedelta(hours=-3)))
+    adjusted = scheduler._adjust_time_to_period_end(early_date)
+    assert adjusted.hour == 12
+    assert adjusted.minute == 0
+    
+    # Testa entre períodos
+    between_date = datetime(2024, 3, 18, 13, 30, tzinfo=timezone(timedelta(hours=-3)))
+    adjusted = scheduler._adjust_time_to_period_end(between_date)
+    assert adjusted.hour == 17
+    assert adjusted.minute == 0
+    
+    # Testa após fim do dia
+    late_date = datetime(2024, 3, 18, 18, 30, tzinfo=timezone(timedelta(hours=-3)))
+    adjusted = scheduler._adjust_time_to_period_end(late_date)
+    assert adjusted.hour == 12
+    assert adjusted.minute == 0
+    assert adjusted.day == 19  # Deve ir para o próximo dia
+
+def test_convert_to_azure_time(scheduler):
+    """Testa a conversão de horário para o formato do Azure DevOps"""
+    # Testa horário entre 10:00 e 12:00
+    morning_date = datetime(2024, 3, 18, 11, 30, tzinfo=timezone(timedelta(hours=-3)))
+    azure_date = scheduler._convert_to_azure_time(morning_date)
+    assert azure_date.hour == 12
+    assert azure_date.minute == 0
+    
+    # Testa horário entre 14:00 e 17:00
+    afternoon_date = datetime(2024, 3, 18, 15, 30, tzinfo=timezone(timedelta(hours=-3)))
+    azure_date = scheduler._convert_to_azure_time(afternoon_date)
+    assert azure_date.hour == 17
+    assert azure_date.minute == 0
+    
+    # Testa horário entre 12:00 e 14:00
+    lunch_date = datetime(2024, 3, 18, 13, 30, tzinfo=timezone(timedelta(hours=-3)))
+    azure_date = scheduler._convert_to_azure_time(lunch_date)
+    assert azure_date.hour == 12
+    assert azure_date.minute == 0
+    
+    # Testa horário antes das 10:00
+    early_date = datetime(2024, 3, 18, 9, 30, tzinfo=timezone(timedelta(hours=-3)))
+    azure_date = scheduler._convert_to_azure_time(early_date)
+    assert azure_date.hour == 12
+    assert azure_date.minute == 0
+    
+    # Testa horário após 17:00
+    late_date = datetime(2024, 3, 18, 17, 30, tzinfo=timezone(timedelta(hours=-3)))
+    azure_date = scheduler._convert_to_azure_time(late_date)
+    assert azure_date.hour == 17
+    assert azure_date.minute == 0
+
+def test_is_working_day(scheduler):
+    """Testa a verificação de dia útil"""
+    # Testa dia útil sem ausência
+    normal_date = datetime(2024, 3, 18, 10, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert scheduler._is_working_day(normal_date, "test@example.com")
+    
+    # Testa fim de semana
+    weekend_date = datetime(2024, 3, 23, 10, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert not scheduler._is_working_day(weekend_date, "test@example.com")
+    
+    # Testa dia com ausência integral
+    full_dayoff_date = datetime(2024, 3, 20, 10, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert not scheduler._is_working_day(full_dayoff_date, "backend1@example.com")
+    
+    # Testa dia com ausência pela manhã
+    morning_dayoff_date = datetime(2024, 3, 21, 10, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert not scheduler._is_working_day(morning_dayoff_date, "backend1@example.com")
+    
+    # Testa dia com ausência pela tarde
+    afternoon_dayoff_date = datetime(2024, 3, 22, 15, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert not scheduler._is_working_day(afternoon_dayoff_date, "frontend1@example.com")
+
+def test_try_update_user_story(scheduler):
+    """Testa a atualização dos dados da User Story"""
+    # Cria uma User Story com duas tasks
+    us = UserStory(
+        id="US-1",
+        title="Test US",
+        description="Test description",
+        assignee=None,  # Campo obrigatório
+        start_date=None,  # Campo obrigatório
+        end_date=None,  # Campo obrigatório
+        story_points=0,  # Campo obrigatório
+        tasks=[
+            Task(
+                id="T1",
+                title="Backend Task",
+                description="Test backend task",
+                work_front=WorkFront.BACKEND,
+                estimated_hours=6.0,
+                assignee="backend1@example.com",
+                dependencies=[],
+                start_date=datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+                end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+                azure_end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+                status=TaskStatus.SCHEDULED,
+                parent_user_story_id="US-1"
+            ),
+            Task(
+                id="T2",
+                title="Frontend Task",
+                description="Test frontend task",
+                work_front=WorkFront.FRONTEND,
+                estimated_hours=6.0,
+                assignee="frontend1@example.com",
+                dependencies=[],
+                start_date=datetime(2024, 3, 19, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+                end_date=datetime(2024, 3, 19, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+                azure_end_date=datetime(2024, 3, 19, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+                status=TaskStatus.SCHEDULED,
+                parent_user_story_id="US-1"
+            )
+        ]
+    )
+    
+    # Atualiza a User Story
+    scheduler._try_update_user_story(us)
+    
+    # Verifica se os campos foram atualizados corretamente
+    assert us.assignee == "backend1@example.com"  # Executor com mais tasks
+    assert us.start_date == datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert us.end_date == datetime(2024, 3, 19, 17, 0, tzinfo=timezone(timedelta(hours=-3)))
+    assert us.story_points == 8  # 12 horas totais = 8 story points (nova lógica)
+
+def test_calculate_executor_availability(scheduler):
+    """Testa o cálculo de disponibilidade do executor"""
+    # Cria um executor
+    executor = Executor(
+        name="Test Executor",
+        email="test@example.com",
+        capacity=6,
+        dayoffs=[]
+    )
+    
+    # Calcula disponibilidade
+    availability = scheduler._calculate_executor_availability(executor)
+    
+    # Verifica se a disponibilidade foi calculada corretamente
+    # 10 dias úteis * 6h = 60h
+    assert availability == 60.0
+    
+    # Adiciona uma task agendada
+    task = Task(
+        id="T1",
+        title="Test Task",
+        description="Test task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="test@example.com",
+        start_date=datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+        end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        azure_end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        status=TaskStatus.SCHEDULED,
+        parent_user_story_id="US-1"
+    )
+    scheduler.sprint.user_stories = [
+        UserStory(
+            id="US-1",
+            title="Test US",
+            description="Test description",
+            assignee=None,
+            start_date=None,
+            end_date=None,
+            story_points=0,
+            tasks=[task]
+        )
+    ]
+    
+    # Recalcula disponibilidade
+    availability = scheduler._calculate_executor_availability(executor)
+    
+    # Verifica se a disponibilidade foi atualizada corretamente
+    # 60h - 6h da task = 54h
+    assert availability == 54.0
+
+def test_get_earliest_start_date(scheduler):
+    """Testa o cálculo da primeira data possível para início da task"""
+    # Cria uma task
+    task = Task(
+        id="T1",
+        title="Test Task",
+        description="Test task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=None,
+        end_date=None,
+        azure_end_date=None,
+        status=TaskStatus.PENDING,
+        parent_user_story_id="US-1"
+    )
+    
+    # Calcula a primeira data possível
+    start_date = scheduler._get_earliest_start_date(task)
+    
+    # Verifica se a data foi calculada corretamente
+    assert start_date is not None
+    assert start_date.hour == 9
+    assert start_date.minute == 0
+    
+    # Adiciona uma dependência
+    task.dependencies = ["T2"]
+    task2 = Task(
+        id="T2",
+        title="Dependency Task",
+        description="Test dependency task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+        end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        azure_end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        status=TaskStatus.SCHEDULED,
+        parent_user_story_id="US-1"
+    )
+    scheduler.sprint.user_stories = [
+        UserStory(
+            id="US-1",
+            title="Test US",
+            description="Test description",
+            assignee=None,
+            start_date=None,
+            end_date=None,
+            story_points=0,
+            tasks=[task2]
+        )
+    ]
+    
+    # Recalcula a primeira data possível
+    start_date = scheduler._get_earliest_start_date(task)
+    
+    # Verifica se a data foi calculada corretamente considerando a dependência
+    assert start_date is not None
+    assert start_date > task2.end_date
+
+def test_get_executor_earliest_date(scheduler):
+    """Testa o cálculo da primeira data possível baseada no executor"""
+    # Cria uma task
+    task = Task(
+        id="T1",
+        title="Test Task",
+        description="Test task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=None,
+        end_date=None,
+        azure_end_date=None,
+        status=TaskStatus.PENDING,
+        parent_user_story_id="US-1"
+    )
+    
+    # Calcula a primeira data possível
+    start_date = scheduler._get_executor_earliest_date(task)
+    
+    # Verifica se a data foi calculada corretamente
+    assert start_date is not None
+    assert start_date.hour == 9
+    assert start_date.minute == 0
+    
+    # Adiciona uma task anterior do mesmo executor
+    task2 = Task(
+        id="T2",
+        title="Previous Task",
+        description="Test previous task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+        end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        azure_end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        status=TaskStatus.SCHEDULED,
+        parent_user_story_id="US-1"
+    )
+    scheduler.sprint.user_stories = [
+        UserStory(
+            id="US-1",
+            title="Test US",
+            description="Test description",
+            assignee=None,
+            start_date=None,
+            end_date=None,
+            story_points=0,
+            tasks=[task2]
+        )
+    ]
+    
+    # Recalcula a primeira data possível
+    start_date = scheduler._get_executor_earliest_date(task)
+    
+    # Verifica se a data foi calculada corretamente considerando a task anterior
+    assert start_date is not None
+    assert start_date > task2.end_date
+
+def test_get_dependencies_earliest_date(scheduler):
+    """Testa o cálculo da primeira data possível baseada nas dependências"""
+    # Cria uma task com dependência
+    task = Task(
+        id="T1",
+        title="Test Task",
+        description="Test task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=None,
+        end_date=None,
+        azure_end_date=None,
+        status=TaskStatus.PENDING,
+        parent_user_story_id="US-1",
+        dependencies=["T2"]
+    )
+    
+    # Adiciona a task dependente
+    task2 = Task(
+        id="T2",
+        title="Dependency Task",
+        description="Test dependency task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+        end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        azure_end_date=datetime(2024, 3, 18, 17, 0, tzinfo=timezone(timedelta(hours=-3))),
+        status=TaskStatus.SCHEDULED,
+        parent_user_story_id="US-1"
+    )
+    scheduler.sprint.user_stories = [
+        UserStory(
+            id="US-1",
+            title="Test US",
+            description="Test description",
+            assignee=None,
+            start_date=None,
+            end_date=None,
+            story_points=0,
+            tasks=[task2]
+        )
+    ]
+    
+    # Calcula a primeira data possível
+    start_date = scheduler._get_dependencies_earliest_date(task)
+    
+    # Verifica se a data foi calculada corretamente
+    assert start_date is not None
+    assert start_date == task2.end_date
+
+def test_calculate_end_date(scheduler):
+    """Testa o cálculo da data de término de uma task"""
+    # Cria uma task
+    task = Task(
+        id="T1",
+        title="Test Task",
+        description="Test task",
+        work_front=WorkFront.BACKEND,
+        estimated_hours=6.0,
+        assignee="backend1@example.com",
+        start_date=None,
+        end_date=None,
+        azure_end_date=None,
+        status=TaskStatus.PENDING,
+        parent_user_story_id="US-1"
+    )
+    
+    # Define a data de início
+    start_date = datetime(2024, 3, 18, 9, 0, tzinfo=timezone(timedelta(hours=-3)))
+    
+    # Calcula a data de término
+    end_date = scheduler._calculate_end_date(task, start_date)
+    
+    # Verifica se a data foi calculada corretamente
+    assert end_date is not None
+    assert end_date > start_date
+    assert end_date.hour == 17
+    assert end_date.minute == 0
+    
+    # Testa task que ultrapassa o fim da sprint
+    task.estimated_hours = 100.0  # Horas suficientes para ultrapassar a sprint
+    end_date = scheduler._calculate_end_date(task, start_date)
+    assert end_date is None  # Deve retornar None pois ultrapassa a sprint 
