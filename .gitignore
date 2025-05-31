@@ -64,6 +64,10 @@ dmypy.json
 .ipynb_checkpoints
 
 # Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 .Python
 build/
 develop-eggs/
@@ -82,8 +86,8 @@ wheels/
 
 # Virtual Environment
 venv/
-env/
 ENV/
+env/
 
 # IDE
 .idea/
@@ -91,8 +95,23 @@ ENV/
 *.swp
 *.swo
 
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
 # Logs
 *.log
+
+# Local configuration
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Reports
 reports/
