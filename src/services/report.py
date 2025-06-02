@@ -37,7 +37,11 @@ class ReportGenerator:
         self.sprint = sprint
         self.dayoffs = dayoffs
         self.output_dir = Path(output_dir)
-        self.team_name = team_name
+        # Ajusta o nome da equipe para o último segmento após a última barra invertida
+        if team_name is None:
+            self.team_name = ""
+        else:
+            self.team_name = str(team_name).split("\\")[-1]
         self.executors = executors
         self.metrics = sprint.metrics
         self.timezone = ZoneInfo(timezone_str)
