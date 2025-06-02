@@ -144,10 +144,10 @@ def executar(
         logger.info("Atualizando itens no Azure DevOps...")
         azure_client.update_work_items(sprint)
         
-        # Gera relatório
+        # Gera o relatório
         logger.info("Gerando relatório...")
-        report_generator = ReportGenerator(sprint, dayoffs, setup.output_dir, setup.team)
-        report_generator.generate()
+        report = ReportGenerator(sprint, dayoffs, setup.output_dir, setup.team, executors)
+        report.generate()
         
         logger.info("Processo concluído com sucesso!")
         

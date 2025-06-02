@@ -13,31 +13,35 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus.flowables import KeepTogether
 
 from ..models.entities import Task, UserStory, Sprint, TaskStatus, WorkFront, SprintMetrics
-from ..models.config import DayOff
+from ..models.config import DayOff, ExecutorsConfig
 
 class ReportGenerator:
     """Serviço responsável pela geração de relatórios"""
 
-    def __init__(self, sprint: Sprint, dayoffs: Dict[str, List[DayOff]], output_dir: str, team_name: str):
+    def __init__(self, sprint: Sprint, dayoffs: Dict[str, List[DayOff]], output_dir: str, team_name: str, executors: ExecutorsConfig):
         """
         Inicializa o gerador de relatórios
         
         Args:
-            sprint: Sprint a ser reportada
+            sprint: Sprint a ser relatada
             dayoffs: Dicionário de ausências por executor
-            output_dir: Diretório onde o relatório será salvo
-            team_name: Nome completo do time (ex: "TR Fintech\\TRF\\TR Banking\\BENEFICIOS")
+            output_dir: Diretório de saída dos relatórios
+            team_name: Nome da equipe
+            executors: Configuração dos executores
         """
         self.sprint = sprint
         self.dayoffs = dayoffs
         self.output_dir = Path(output_dir)
+        self.team_name = team_name
+        self.executors = executors
+        self.metrics = sprint.metrics
+        
+        # Cria o diretório de saída se não existir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Define os estilos do PDF
         self.styles = getSampleStyleSheet()
         self._setup_styles()
-        # Extrai o nome do time do caminho completo
-        self.team_name = team_name.split('\\')[-1] if '\\' in team_name else team_name
-        # Obtém as métricas da sprint do scheduler
-        self.metrics = sprint.metrics
 
     def _setup_styles(self):
         """Configura estilos personalizados para o relatório"""
@@ -97,7 +101,8 @@ class ReportGenerator:
             fontSize=10,
             leading=12,
             alignment=TA_LEFT,
-            fontName='Helvetica-Bold'
+            fontName='Helvetica-Bold',
+            textColor=colors.white
         ))
 
     def _create_table_style(self, header_bg_color=colors.HexColor('#FF6B00')):  # Laranja
@@ -189,16 +194,23 @@ class ReportGenerator:
         report.append("| Executor | Capacity Total | Capacity Utilizada | Capacity Disponível | Datas de Ausência |")
         report.append("|----------|----------------|-------------------|---------------------|-------------------|")
         
-        for executor in sorted(self.metrics.total_capacity.keys()):
-            total = self.metrics.total_capacity.get(executor, 0)
-            used = self.metrics.used_capacity.get(executor, 0)
-            available = self.metrics.available_capacity.get(executor, 0)
+        # Obtém todos os executores únicos de todas as frentes
+        all_executors = set()
+        for front in WorkFront:
+            executors_list = getattr(self.executors, front.value, [])
+            all_executors.update(executors_list)
+        
+        # Ordena os executores por email
+        for executor in sorted(all_executors, key=lambda e: e.email):
+            total = self.metrics.total_capacity.get(executor.email, 0)
+            used = self.metrics.used_capacity.get(executor.email, 0)
+            available = self.metrics.available_capacity.get(executor.email, 0)
             
             # Obtém as ausências do executor
             absences = []
             # Tenta encontrar as ausências ignorando case
             executor_dayoffs = next((dayoffs for name, dayoffs in self.dayoffs.items() 
-                                  if name.lower() == executor.lower()), [])
+                                  if name.lower() == executor.email.lower()), [])
             
             for dayoff in executor_dayoffs:
                 period = {
@@ -209,7 +221,7 @@ class ReportGenerator:
                 absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
             
             report.append(
-                f"| {executor} | {total:.1f}h | {used:.1f}h | {available:.1f}h | {', '.join(absences) or '-'} |"
+                f"| {executor.email} | {total:.1f}h | {used:.1f}h | {available:.1f}h | {', '.join(absences) or '-'} |"
             )
         
         report.append("")
@@ -217,6 +229,8 @@ class ReportGenerator:
         # 5. Percentual de Capacity Preenchida
         report.append("## 5. Percentual de Capacity Preenchida")
         report.append("")
+        report.append("| Métrica | Valor |")
+        report.append("|---------|-------|")
         
         # Calcula o total de capacity disponível e utilizada
         total_available = sum(self.metrics.total_capacity.values())
@@ -225,10 +239,9 @@ class ReportGenerator:
         # Calcula o percentual preenchido
         percent_filled = (total_used / total_available * 100) if total_available > 0 else 0
         
-        report.append(f"**Percentual de Capacity Preenchida:** {percent_filled:.2f}%")
-        report.append("")
-        report.append(f"*Total de Capacity Disponível:* {total_available:.1f}h")
-        report.append(f"*Total de Capacity Utilizada:* {total_used:.1f}h")
+        report.append(f"| Percentual de Capacity Preenchida | {percent_filled:.2f}% |")
+        report.append(f"| Total de Capacity Disponível | {total_available:.1f}h |")
+        report.append(f"| Total de Capacity Utilizada | {total_used:.1f}h |")
         report.append("")
         
         return "\n".join(report)
@@ -348,16 +361,23 @@ class ReportGenerator:
             Paragraph('Datas de Ausência', self.styles['TableHeader'])
         ]]
         
-        for executor in sorted(self.metrics.total_capacity.keys()):
-            total = self.metrics.total_capacity.get(executor, 0)
-            used = self.metrics.used_capacity.get(executor, 0)
-            available = self.metrics.available_capacity.get(executor, 0)
+        # Obtém todos os executores únicos de todas as frentes
+        all_executors = set()
+        for front in WorkFront:
+            executors_list = getattr(self.executors, front.value, [])
+            all_executors.update(executors_list)
+        
+        # Ordena os executores por email
+        for executor in sorted(all_executors, key=lambda e: e.email):
+            total = self.metrics.total_capacity.get(executor.email, 0)
+            used = self.metrics.used_capacity.get(executor.email, 0)
+            available = self.metrics.available_capacity.get(executor.email, 0)
             
             # Obtém as ausências do executor
             absences = []
             # Tenta encontrar as ausências ignorando case
             executor_dayoffs = next((dayoffs for name, dayoffs in self.dayoffs.items() 
-                                  if name.lower() == executor.lower()), [])
+                                  if name.lower() == executor.email.lower()), [])
             
             for dayoff in executor_dayoffs:
                 period = {
@@ -368,7 +388,7 @@ class ReportGenerator:
                 absences.append(f"{dayoff.date.strftime('%d/%m/%Y')} ({period[dayoff.period]})")
             
             capacity_data.append([
-                Paragraph(executor, self.styles['TableCell']),
+                Paragraph(executor.email, self.styles['TableCell']),
                 Paragraph(f"{total:.1f}h", self.styles['TableCell']),
                 Paragraph(f"{used:.1f}h", self.styles['TableCell']),
                 Paragraph(f"{available:.1f}h", self.styles['TableCell']),
@@ -399,10 +419,29 @@ class ReportGenerator:
         # Calcula o percentual preenchido
         percent_filled = (total_used / total_available * 100) if total_available > 0 else 0
         
-        elements.append(Paragraph(f"Percentual de Capacity Preenchida: {percent_filled:.2f}%", self.styles['NormalWrap']))
-        elements.append(Spacer(1, 6))
-        elements.append(Paragraph(f"Total de Capacity Disponível: {total_available:.1f}h", self.styles['NormalWrap']))
-        elements.append(Paragraph(f"Total de Capacity Utilizada: {total_used:.1f}h", self.styles['NormalWrap']))
+        capacity_summary_data = [[
+            Paragraph('Métrica', self.styles['TableHeader']),
+            Paragraph('Valor', self.styles['TableHeader'])
+        ]]
+        
+        capacity_summary_data.extend([
+            [Paragraph('Percentual de Capacity Preenchida', self.styles['TableCell']),
+             Paragraph(f"{percent_filled:.2f}%", self.styles['TableCell'])],
+            [Paragraph('Total de Capacity Disponível', self.styles['TableCell']),
+             Paragraph(f"{total_available:.1f}h", self.styles['TableCell'])],
+            [Paragraph('Total de Capacity Utilizada', self.styles['TableCell']),
+             Paragraph(f"{total_used:.1f}h", self.styles['TableCell'])]
+        ])
+        
+        capacity_summary_table = LongTable(
+            capacity_summary_data,
+            colWidths=[
+                available_width * 0.6,  # Métrica
+                available_width * 0.4   # Valor
+            ]
+        )
+        capacity_summary_table.setStyle(self._create_table_style())
+        elements.append(KeepTogether(capacity_summary_table))
         elements.append(Spacer(1, 12))
         
         # Gera o PDF

@@ -743,11 +743,6 @@ class SprintScheduler:
         Returns:
             float: Horas disponíveis
         """
-        # Calcula total de horas já alocadas (apenas de tasks ativas)
-        assigned_tasks = self.sprint.get_tasks_by_assignee(executor.email)
-        allocated_hours = sum(t.estimated_hours for t in assigned_tasks 
-                             if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED])
-        
         # Calcula total de horas de ausência (usando email em lowercase)
         dayoff_hours = 0
         executor_dayoffs = self.dayoffs.get(executor.email.lower(), [])
@@ -771,8 +766,8 @@ class SprintScheduler:
         # Calcula total de horas disponíveis (6 horas por dia útil)
         total_hours = working_days * executor.capacity
         
-        # Subtrai as horas já alocadas e as horas de ausência
-        return total_hours - allocated_hours - dayoff_hours
+        # Subtrai apenas as horas de ausência
+        return total_hours - dayoff_hours
 
     def _get_earliest_start_date(self, task: Task) -> Optional[datetime]:
         """

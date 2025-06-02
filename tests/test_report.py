@@ -369,7 +369,15 @@ def test_generate_with_metrics():
     )
     sprint.metrics.update_capacity("test@example.com", 40, 20)
     
-    report = ReportGenerator(sprint, {}, "output", "Team A")
+    # Cria configuração de executores
+    executors = ExecutorsConfig(
+        backend=[Executor(email="test@example.com", capacity=6)],
+        frontend=[],
+        qa=[],
+        devops=[]
+    )
+    
+    report = ReportGenerator(sprint, {}, "output", "Team A", executors)
     
     # Gera o relatório em Markdown
     markdown_content = report._generate_markdown()
@@ -398,7 +406,15 @@ def test_generate_with_empty_metrics():
     )
     sprint.metrics = SprintMetrics()
     
-    report = ReportGenerator(sprint, {}, "output", "Team A")
+    # Cria configuração de executores
+    executors = ExecutorsConfig(
+        backend=[Executor(email="test@example.com", capacity=6)],
+        frontend=[],
+        qa=[],
+        devops=[]
+    )
+    
+    report = ReportGenerator(sprint, {}, "output", "Team A", executors)
     
     # Gera o relatório em Markdown
     markdown_content = report._generate_markdown()
@@ -443,7 +459,18 @@ def test_generate_with_multiple_executors():
     sprint.metrics.update_capacity("executor1@example.com", 40, 30)
     sprint.metrics.update_capacity("executor2@example.com", 40, 10)
     
-    report = ReportGenerator(sprint, {}, "output", "Team A")
+    # Cria configuração de executores
+    executors = ExecutorsConfig(
+        backend=[
+            Executor(email="executor1@example.com", capacity=6),
+            Executor(email="executor2@example.com", capacity=6)
+        ],
+        frontend=[],
+        qa=[],
+        devops=[]
+    )
+    
+    report = ReportGenerator(sprint, {}, "output", "Team A", executors)
     
     # Gera o relatório em Markdown
     markdown_content = report._generate_markdown()
