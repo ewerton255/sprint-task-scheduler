@@ -214,6 +214,23 @@ class ReportGenerator:
         
         report.append("")
         
+        # 5. Percentual de Capacity Preenchida
+        report.append("## 5. Percentual de Capacity Preenchida")
+        report.append("")
+        
+        # Calcula o total de capacity disponível e utilizada
+        total_available = sum(self.metrics.total_capacity.values())
+        total_used = sum(self.metrics.used_capacity.values())
+        
+        # Calcula o percentual preenchido
+        percent_filled = (total_used / total_available * 100) if total_available > 0 else 0
+        
+        report.append(f"**Percentual de Capacity Preenchida:** {percent_filled:.2f}%")
+        report.append("")
+        report.append(f"*Total de Capacity Disponível:* {total_available:.1f}h")
+        report.append(f"*Total de Capacity Utilizada:* {total_used:.1f}h")
+        report.append("")
+        
         return "\n".join(report)
 
     def generate(self) -> None:
@@ -370,6 +387,22 @@ class ReportGenerator:
         )
         capacity_table.setStyle(self._create_table_style())
         elements.append(KeepTogether(capacity_table))
+        elements.append(Spacer(1, 12))
+        
+        # 5. Percentual de Capacity Preenchida
+        elements.append(Paragraph("5. Percentual de Capacity Preenchida", self.styles['CustomHeading1']))
+        
+        # Calcula o total de capacity disponível e utilizada
+        total_available = sum(self.metrics.total_capacity.values())
+        total_used = sum(self.metrics.used_capacity.values())
+        
+        # Calcula o percentual preenchido
+        percent_filled = (total_used / total_available * 100) if total_available > 0 else 0
+        
+        elements.append(Paragraph(f"Percentual de Capacity Preenchida: {percent_filled:.2f}%", self.styles['NormalWrap']))
+        elements.append(Spacer(1, 6))
+        elements.append(Paragraph(f"Total de Capacity Disponível: {total_available:.1f}h", self.styles['NormalWrap']))
+        elements.append(Paragraph(f"Total de Capacity Utilizada: {total_used:.1f}h", self.styles['NormalWrap']))
         elements.append(Spacer(1, 12))
         
         # Gera o PDF

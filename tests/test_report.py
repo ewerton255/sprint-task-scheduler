@@ -380,6 +380,12 @@ def test_generate_with_metrics():
     assert "Test reason" in markdown_content
     assert "40.0h" in markdown_content
     assert "20.0h" in markdown_content
+    
+    # Verifica se o conteúdo contém a seção de percentual de capacity
+    assert "## 5. Percentual de Capacity Preenchida" in markdown_content
+    assert "**Percentual de Capacity Preenchida:** 50.00%" in markdown_content
+    assert "*Total de Capacity Disponível:* 40.0h" in markdown_content
+    assert "*Total de Capacity Utilizada:* 20.0h" in markdown_content
 
 def test_generate_with_empty_metrics():
     """Testa a geração do relatório sem métricas"""
@@ -399,6 +405,12 @@ def test_generate_with_empty_metrics():
     
     # Verifica se o conteúdo não contém a seção de tasks não planejadas
     assert "## 3. Tasks não planejadas" not in markdown_content
+    
+    # Verifica se o conteúdo contém a seção de percentual de capacity com valores zerados
+    assert "## 5. Percentual de Capacity Preenchida" in markdown_content
+    assert "**Percentual de Capacity Preenchida:** 0.00%" in markdown_content
+    assert "*Total de Capacity Disponível:* 0.0h" in markdown_content
+    assert "*Total de Capacity Utilizada:* 0.0h" in markdown_content
 
 def test_generate_with_invalid_team_name():
     """Testa a geração do relatório com nome de time inválido"""
@@ -416,4 +428,28 @@ def test_generate_with_invalid_team_name():
     
     # Testa com nome de time com caminho completo
     report = ReportGenerator(sprint, {}, "output", "TR Fintech\\TRF\\TR Banking\\BENEFICIOS")
-    assert report.team_name == "BENEFICIOS" 
+    assert report.team_name == "BENEFICIOS"
+
+def test_generate_with_multiple_executors():
+    """Testa a geração do relatório com múltiplos executores"""
+    sprint = Sprint(
+        name="Test Sprint",
+        start_date=datetime(2024, 3, 18, tzinfo=timezone(timedelta(hours=-3))),
+        end_date=datetime(2024, 3, 29, tzinfo=timezone(timedelta(hours=-3))),
+        user_stories=[],
+        team="Team A"
+    )
+    sprint.metrics = SprintMetrics()
+    sprint.metrics.update_capacity("executor1@example.com", 40, 30)
+    sprint.metrics.update_capacity("executor2@example.com", 40, 10)
+    
+    report = ReportGenerator(sprint, {}, "output", "Team A")
+    
+    # Gera o relatório em Markdown
+    markdown_content = report._generate_markdown()
+    
+    # Verifica se o conteúdo contém a seção de percentual de capacity com os valores corretos
+    assert "## 5. Percentual de Capacity Preenchida" in markdown_content
+    assert "**Percentual de Capacity Preenchida:** 50.00%" in markdown_content
+    assert "*Total de Capacity Disponível:* 80.0h" in markdown_content
+    assert "*Total de Capacity Utilizada:* 40.0h" in markdown_content 
