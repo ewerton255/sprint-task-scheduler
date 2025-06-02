@@ -146,7 +146,7 @@ def executar(
         
         # Gera o relatório
         logger.info("Gerando relatório...")
-        report = ReportGenerator(sprint, dayoffs, setup.output_dir, setup.team, executors)
+        report = ReportGenerator(sprint, dayoffs, setup.output_dir, setup.team, executors, timezone_str=setup.timezone)
         report.generate()
         
         logger.info("Processo concluído com sucesso!")

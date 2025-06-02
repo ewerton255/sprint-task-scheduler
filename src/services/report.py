@@ -14,6 +14,7 @@ from reportlab.platypus.flowables import KeepTogether
 import openpyxl
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
+from zoneinfo import ZoneInfo
 
 from ..models.entities import Task, UserStory, Sprint, TaskStatus, WorkFront, SprintMetrics
 from ..models.config import DayOff, ExecutorsConfig
@@ -21,7 +22,7 @@ from ..models.config import DayOff, ExecutorsConfig
 class ReportGenerator:
     """Serviço responsável pela geração de relatórios"""
 
-    def __init__(self, sprint: Sprint, dayoffs: Dict[str, List[DayOff]], output_dir: str, team_name: str, executors: ExecutorsConfig):
+    def __init__(self, sprint: Sprint, dayoffs: Dict[str, List[DayOff]], output_dir: str, team_name: str, executors: ExecutorsConfig, timezone_str: str = "America/Sao_Paulo"):
         """
         Inicializa o gerador de relatórios
         
@@ -31,6 +32,7 @@ class ReportGenerator:
             output_dir: Diretório de saída dos relatórios
             team_name: Nome da equipe
             executors: Configuração dos executores
+            timezone_str: Timezone a ser utilizado (ex: 'America/Sao_Paulo')
         """
         self.sprint = sprint
         self.dayoffs = dayoffs
@@ -38,6 +40,7 @@ class ReportGenerator:
         self.team_name = team_name
         self.executors = executors
         self.metrics = sprint.metrics
+        self.timezone = ZoneInfo(timezone_str)
         
         # Cria o diretório de saída se não existir
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,6 +57,16 @@ class ReportGenerator:
             'partial': PatternFill(start_color='4DABF7', end_color='4DABF7', fill_type='solid'),  # Azul claro
             'empty': PatternFill(start_color='FFE066', end_color='FFE066', fill_type='solid')     # Amarelo pastel
         }
+        
+        # Ajusta datas da sprint para o timezone correto
+        if self.sprint.start_date.tzinfo is None or self.sprint.start_date.tzinfo.utcoffset(self.sprint.start_date) is None:
+            self.sprint.start_date = self.sprint.start_date.replace(tzinfo=self.timezone)
+        else:
+            self.sprint.start_date = self.sprint.start_date.astimezone(self.timezone)
+        if self.sprint.end_date.tzinfo is None or self.sprint.end_date.tzinfo.utcoffset(self.sprint.end_date) is None:
+            self.sprint.end_date = self.sprint.end_date.replace(tzinfo=self.timezone)
+        else:
+            self.sprint.end_date = self.sprint.end_date.astimezone(self.timezone)
         
         # Define os horários dos períodos
         self.morning_start = datetime.strptime('09:00', '%H:%M').time()
@@ -684,23 +697,26 @@ class ReportGenerator:
         """
         # Obtém todas as tasks do executor
         tasks = self.sprint.get_tasks_by_assignee(executor_email)
+        logger.info(f"Calculando alocação para {executor_email} em {date.date()} {start_time}-{end_time}")
+        logger.info(f"Total de tasks encontradas: {len(tasks)}")
         
         # Filtra apenas tasks ativas
         active_tasks = [t for t in tasks if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]]
+        logger.info(f"Tasks ativas: {len(active_tasks)}")
         
         # Calcula horas alocadas no período
         allocated_hours = 0
         for task in active_tasks:
             if task.start_date and task.end_date:
-                # Converte as datas para o mesmo timezone da data de referência
-                task_start = task.start_date.astimezone(date.tzinfo)
-                task_end = task.end_date.astimezone(date.tzinfo)
+                # Ajusta datas das tasks para o timezone correto
+                task_start = task.start_date.astimezone(self.timezone)
+                task_end = task.end_date.astimezone(self.timezone)
                 
                 # Verifica se a task está no dia
                 if task_start.date() <= date.date() <= task_end.date():
                     # Calcula sobreposição com o período
-                    period_start = datetime.combine(date.date(), start_time).replace(tzinfo=date.tzinfo)
-                    period_end = datetime.combine(date.date(), end_time).replace(tzinfo=date.tzinfo)
+                    period_start = datetime.combine(date.date(), start_time, tzinfo=self.timezone)
+                    period_end = datetime.combine(date.date(), end_time, tzinfo=self.timezone)
                     
                     # Ajusta as datas para considerar apenas o período de trabalho
                     period_start = max(period_start, task_start)
@@ -710,7 +726,9 @@ class ReportGenerator:
                         # Calcula horas sobrepostas
                         overlap_hours = (period_end - period_start).total_seconds() / 3600
                         allocated_hours += overlap_hours
+                        logger.info(f"Task {task.id}: {overlap_hours:.1f}h alocadas (início: {task_start}, fim: {task_end})")
         
+        logger.info(f"Total alocado: {allocated_hours:.1f}h")
         return allocated_hours
 
     def _apply_allocation_color(self, cell, allocation: float) -> None:

@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from loguru import logger
 from ..models.entities import Task, UserStory, Sprint, WorkFront, TaskStatus, SprintMetrics
 from ..models.config import DayOff, ExecutorsConfig, Executor
+import random
 
 class SprintScheduler:
     """Serviço responsável pelo agendamento de tasks na sprint"""
@@ -681,7 +682,10 @@ class SprintScheduler:
         executors_list = getattr(self.executors, task.work_front.value, [])
         if not executors_list:
             return None
-            
+        # Randomiza a ordem dos executores para evitar sempre o mesmo primeiro
+        executors_list = executors_list[:]
+        random.shuffle(executors_list)
+        
         # Verifica se já existe executor para a frente na US
         us = [us for us in self.sprint.user_stories if us.id == task.parent_user_story_id][0]
         front_tasks = [t for t in us.tasks 
