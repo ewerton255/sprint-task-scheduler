@@ -662,6 +662,9 @@ class ReportGenerator:
                     bottom=bottom if bottom != none else thin
                 )
 
+        # Desabilitar linhas de grade
+        ws.sheet_view.showGridLines = False
+
         excel_path = self.output_dir / f"relatorio_sprint_{self.sprint.name.replace(' ', '_')}.xlsx"
         wb.save(str(excel_path))
         logger.info(f"Relatório Excel gerado em {excel_path}")
