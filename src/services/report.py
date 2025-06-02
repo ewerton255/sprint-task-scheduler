@@ -48,11 +48,11 @@ class ReportGenerator:
         
         # Define as cores para o Excel
         self.excel_colors = {
-            'weekend': PatternFill(start_color='FFB3B3', end_color='FFB3B3', fill_type='solid'),  # Vermelho claro
-            'dayoff': PatternFill(start_color='B3B3B3', end_color='B3B3B3', fill_type='solid'),   # Cinza claro
-            'full': PatternFill(start_color='B3FFB3', end_color='B3FFB3', fill_type='solid'),     # Verde claro
-            'partial': PatternFill(start_color='B3D1FF', end_color='B3D1FF', fill_type='solid'),  # Azul claro
-            'empty': PatternFill(start_color='FFFFB3', end_color='FFFFB3', fill_type='solid')     # Amarelo claro
+            'weekend': PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid'),  # Cinza claro
+            'dayoff': PatternFill(start_color='FF6B6B', end_color='FF6B6B', fill_type='solid'),   # Vermelho suave
+            'full': PatternFill(start_color='51CF66', end_color='51CF66', fill_type='solid'),     # Verde
+            'partial': PatternFill(start_color='4DABF7', end_color='4DABF7', fill_type='solid'),  # Azul claro
+            'empty': PatternFill(start_color='FFE066', end_color='FFE066', fill_type='solid')     # Amarelo pastel
         }
         
         # Define os horários dos períodos
@@ -502,7 +502,7 @@ class ReportGenerator:
         for col in range(1, last_col + 1):
             ws.column_dimensions[get_column_letter(col)].width = col_width
 
-        current_row = 1
+        current_row = 2
         for executor in sorted_executors:
             bloco_inicio = current_row
             bloco_fim = current_row + 4  # email, vazia, datas, manhã, tarde
