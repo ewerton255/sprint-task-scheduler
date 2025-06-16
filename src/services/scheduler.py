@@ -826,7 +826,7 @@ class SprintScheduler:
 
     def _get_best_executor(self, task: Task) -> Optional[str]:
         """
-        Encontra o melhor executor para uma task
+        Encontra o melhor executor para uma task, tentando todos os executores disponíveis da mesma frente
 
         Args:
             task: Task a ser atribuída
@@ -838,9 +838,6 @@ class SprintScheduler:
         executors_list = getattr(self.executors, task.work_front.value, [])
         if not executors_list:
             return None
-        # Randomiza a ordem dos executores para evitar sempre o mesmo primeiro
-        executors_list = executors_list[:]
-        random.shuffle(executors_list)
 
         # Verifica se já existe executor para a frente na US
         us = [
@@ -854,58 +851,64 @@ class SprintScheduler:
             and t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]
         ]
 
+        # Se já existe executor para a frente, tenta primeiro ele
         if front_tasks:
-            # Se já existe executor para a frente, verifica se ele tem capacity
             current_executor = front_tasks[0].assignee
             if (
                 self._get_executor_current_capacity(current_executor)
                 >= task.estimated_hours
             ):
-                return current_executor
+                # Tenta agendar com o executor atual
+                task.assignee = current_executor
+                if self._try_schedule_task(task):
+                    return current_executor
+                # Se não conseguiu agendar, remove o executor e continua com os outros
+                task.assignee = None
 
-        # Calcula carga de trabalho atual de cada executor
-        executor_loads = {}
+        # Randomiza a ordem dos executores para evitar sempre o mesmo primeiro
+        executors_list = executors_list[:]
+        random.shuffle(executors_list)
+
+        # Tenta cada executor disponível
         for executor in executors_list:
             # Verifica se o executor tem capacity suficiente
             current_capacity = self._get_executor_current_capacity(executor.email)
             if current_capacity < task.estimated_hours:
                 continue
 
-            # Considera apenas tasks agendadas e ativas
-            assigned_tasks = [
-                t
-                for t in self.sprint.get_tasks_by_assignee(executor.email)
-                if t.status not in [TaskStatus.CLOSED, TaskStatus.CANCELLED]
-            ]
+            # Tenta agendar com este executor
+            task.assignee = executor.email
+            if self._try_schedule_task(task):
+                return executor.email
 
-            # Calcula horas totais e horas na mesma frente
-            total_hours = sum(t.estimated_hours for t in assigned_tasks)
-            front_hours = sum(
-                t.estimated_hours
-                for t in assigned_tasks
-                if t.work_front == task.work_front
-            )
+            # Se não conseguiu agendar, remove o executor e continua com os outros
+            task.assignee = None
 
-            # Pontuação considera balanceamento geral e por frente
-            executor_loads[executor.email] = {
-                "total_hours": total_hours,
-                "front_hours": front_hours,
-                "capacity": current_capacity,
-            }
+        # Se chegou aqui, não conseguiu agendar com nenhum executor
+        return None
 
-        # Escolhe executor com menor carga na frente e maior capacity
-        best_executor = None
-        best_score = float("inf")
+    def _try_schedule_task(self, task: Task) -> bool:
+        """
+        Tenta agendar uma task com o executor atual
 
-        for executor, load in executor_loads.items():
-            # Penaliza mais a carga na mesma frente
-            score = (load["front_hours"] * 2 + load["total_hours"]) / load["capacity"]
+        Args:
+            task: Task a ser agendada
 
-            if score < best_score:
-                best_executor = executor
-                best_score = score
+        Returns:
+            bool: True se conseguiu agendar, False caso contrário
+        """
+        # Calcula data de início
+        start_date = self._get_earliest_start_date(task)
+        if not start_date:
+            return False
 
-        return best_executor
+        # Calcula data de término
+        end_date = self._calculate_end_date(task, start_date)
+        if not end_date:
+            return False
+
+        # Se chegou aqui, conseguiu agendar
+        return True
 
     def _calculate_executor_availability(self, executor: Executor) -> float:
         """
@@ -1118,6 +1121,15 @@ class SprintScheduler:
         remaining_hours = task.estimated_hours
         real_end_date = None
 
+        # Pega todas as tasks já agendadas do executor
+        executor_tasks = [
+            t
+            for t in self.sprint.get_tasks_by_assignee(task.assignee)
+            if t.status == TaskStatus.SCHEDULED
+            and t.end_date is not None
+            and t.id != task.id
+        ]
+
         while remaining_hours > 0:
             # Verifica se a data atual já passou do fim da sprint
             if current_date.date() > self.sprint.end_date.date():
@@ -1191,6 +1203,39 @@ class SprintScheduler:
                     current_date + timedelta(days=1), 9
                 )
                 continue
+
+            # Verifica se há alguma task do executor ocupando este período
+            period_start = self._create_datetime(
+                current_date, 9 if current_time < self.afternoon_start else 14
+            )
+            period_end_dt = datetime.combine(
+                current_date.date(), period_end, tzinfo=self.timezone
+            )
+
+            for executor_task in executor_tasks:
+                if executor_task.start_date and executor_task.end_date:
+                    # Se a task do executor está no mesmo dia
+                    if executor_task.start_date.date() == current_date.date():
+                        # Se a task do executor está no mesmo período
+                        if (
+                            executor_task.start_date.time() < period_end
+                            and executor_task.end_date.time() > period_start.time()
+                        ):
+                            # Se a task do executor está ocupando todo o período
+                            if (
+                                executor_task.start_date.time() <= period_start.time()
+                                and executor_task.end_date.time() >= period_end
+                            ):
+                                # Pula para o próximo período
+                                if period_end == self.morning_end:
+                                    current_date = self._create_datetime(
+                                        current_date, 14
+                                    )
+                                else:
+                                    current_date = self._create_datetime(
+                                        current_date + timedelta(days=1), 9
+                                    )
+                                continue
 
             # Corrigido: cria period_end_dt com timezone
             period_end_dt = datetime.combine(
